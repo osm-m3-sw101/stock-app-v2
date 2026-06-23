@@ -264,7 +264,7 @@
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
       // 🚨 ตรวจสอบให้แน่ใจว่า URL นี้เป็นตัวล่าสุดที่คุณเพิ่ง Deploy มาใหม่นะครับ
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwjY015wYnYemFEw5FHxh__j4szRZHAJJkr3lTIFAv5Y4ytVFS2JAO6CUTP485LYdIRGg/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyx1Th_D8RL-vwSFy_7pnWPKCEvTmNWY_mWFeJpK1MSjMT1jj6JLk3EDBtXN_tYvaz1og/exec";
 
       async function syncData(isFirstLogin) {
         showLoading("กำลังเตรียมระบบ...");
@@ -607,23 +607,23 @@
           document.getElementById('btnDelete').classList.remove('hidden'); 
       }
       
-      // ---- 🟢 แก้ไข: โหลดประวัติจาก Firebase โดยตรง ----
+     // ---- 🟢 แก้ไข: โหลดประวัติจาก Google Sheets แทนเพื่อให้ข้อมูลไม่หาย ----
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
-          list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
+          list.innerHTML = '<div class="text-center mt-3">กำลังโหลดประวัติ...</div>'; 
           
           try {
-              const res = await fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json");
-              const data = await res.json();
+              // ดึงข้อมูลผ่าน GAS_API_URL แทน FIREBASE
+              const res = await fetch(GAS_API_URL + "?action=getHistory");
+              const rows = await res.json();
+              
               list.innerHTML = ''; 
-              if(!data) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
+              if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
               
               const groups = {}; 
-              Object.values(data).forEach(r => { 
-                  const d = new Date(r.timestamp).toLocaleDateString('th-TH');
-                  const k = `${d}||${r.employeeName}`; 
+              rows.forEach(r => { 
+                  const k = `${r.dateGroup}||${r.emp}`; 
                   if(!groups[k]) groups[k]=[]; 
-                  r.timeStr = new Date(r.timestamp).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'});
                   groups[k].push(r); 
               }); 
               
@@ -634,16 +634,18 @@
                   h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; 
                   list.appendChild(h); 
                   
-                  groups[key].reverse().forEach(r => { 
+                  groups[key].forEach(r => { 
+                      const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); 
                       const div = document.createElement('div'); 
                       div.className = 'group-item'; 
-                      div.onclick = function() { openFormFromHistory(r); };
-                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.productName}</div><small class="text-muted">${r.timeStr}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.productId}</small></div>`; 
+                      div.onclick = function() { openFormFromHistory(r); }; 
+                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
                       list.appendChild(div); 
                   }); 
               } 
           } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; }
       }
+      
 
       // ---- 🟢 ฟังก์ชันใหม่: ดึงข้อมูลลงชีตผ่านมือถือ ----
       async function triggerAdminSync() {
