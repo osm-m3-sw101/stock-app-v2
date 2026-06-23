@@ -217,8 +217,8 @@
       const AUTO_SYNC_LIMIT = 50; 
       const AUTO_SYNC_TIMER = 60000;
 
-      // 🚨 เอา URL ใหม่จาก Google Apps Script มาใส่ตรงนี้ 🚨
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwVduRkWNI1VBMz9M90l-WgfNW2RY2xwVjBmgFJ9ivQ0NzOWdidAkCuPItr6P_gpUgtAw/exec";
+      // 🚨 สำคัญมาก: เอา URL ล่าสุดที่ได้มาวางในเครื่องหมายคำพูดด้านล่างนี้ 🚨
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxU5syp9yxMZp5NiqtomESec6sXZ7C4UTG75MxkB89XDiPBZzOAFXVsOp1xu0x1BRrrSg/exec";
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       
@@ -240,22 +240,12 @@
         const allInputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="search"]');
         
         allInputs.forEach(input => {
-            input.addEventListener('focus', () => {
-                bottomNav.classList.add('hidden'); document.body.style.paddingBottom = "10px";
-            });
-            input.addEventListener('blur', () => {
-                setTimeout(() => {
-                    if (document.activeElement.tagName !== 'INPUT') {
-                        bottomNav.classList.remove('hidden'); document.body.style.paddingBottom = "90px";
-                    }
-                }, 100);
-            });
+            input.addEventListener('focus', () => { bottomNav.classList.add('hidden'); document.body.style.paddingBottom = "10px"; });
+            input.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement.tagName !== 'INPUT') { bottomNav.classList.remove('hidden'); document.body.style.paddingBottom = "90px"; } }, 100); });
         });
       };
 
-      document.addEventListener("visibilitychange", function() {
-        if (document.visibilityState === 'hidden' && offlineQueue.length > 0) { syncBatchData(); }
-      });
+      document.addEventListener("visibilitychange", function() { if (document.visibilityState === 'hidden' && offlineQueue.length > 0) { syncBatchData(); } });
 
       function login() { const name = (document.getElementById('employeeName').value || "").trim(); if(!name) return alert("กรุณาใส่ชื่อพนักงาน"); localStorage.setItem('stockAppUser', name); document.getElementById('displayName').innerText = name; document.getElementById('loginSection').classList.add('hidden'); document.getElementById('appSection').classList.remove('hidden'); syncData(true); }
       function logout() { Swal.fire({title:'ออกจากระบบ?',showCancelButton:true,confirmButtonText:'ตกลง'}).then((r)=>{if(r.isConfirmed){localStorage.removeItem('stockAppUser'); if(isScannerRunning) safeStopScanner(); document.getElementById('appSection').classList.add('hidden'); document.getElementById('loginSection').classList.remove('hidden'); document.getElementById('employeeName').value = '';}}); }
@@ -269,7 +259,7 @@
             allProducts = JSON.parse(cachedProducts);
             await fetchDynamicData(isFirstLogin);
         } else {
-            showLoading("โหลดฐานข้อมูล 17,000 รายการ (ครั้งแรก)...");
+            showLoading("กำลังโหลดฐานข้อมูลสินค้าทั้งหมด");
             try {
                 const response = await fetch(GAS_API_URL + "?action=getAllData");
                 const data = await response.json();
@@ -292,7 +282,6 @@
       function processDynamicData(data, isFirstLogin) {
           rawCountedIds = data.countedRawIds || [];
           countedDetailMap = data.countedDetailMap || {}; 
-
           offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
           uniqueCountedIds = new Set(rawCountedIds);
 
@@ -311,12 +300,6 @@
           hideLoading(); 
           if(isFirstLogin) switchTab('scan');
           else if(lastActiveTab === 'dashboard') calculateDashboard();
-      }
-
-      function forceUpdateMasterData() {
-          Swal.fire({ title: 'อัปเดตฐานข้อมูล?', text: 'โหลดรายชื่อสินค้าใหม่จากเซิร์ฟเวอร์', icon: 'info', showCancelButton: true, confirmButtonText: 'อัปเดต' }).then((result) => {
-              if (result.isConfirmed) { localStorage.removeItem('localStockData'); syncData(false); }
-          });
       }
 
       function switchTab(tab) {
@@ -340,30 +323,45 @@
         }
       }
 
-      // ---- 🟢 กฎนับรวมช่องอัตโนมัติ (Auto-merge) กลับมาแล้ว ----
+      // =====================================
+      // 🟢 ฟังก์ชันบันทึกข้อมูล (กฎรวบช่อง Auto-merge กลับมาแล้ว!)
+      // =====================================
       function saveData(isVerifyMode) {
         let employeeName = localStorage.getItem('stockAppUser');
         let nf1 = Number(document.getElementById('f1').value) || ""; let nf2 = Number(document.getElementById('f2').value) || ""; let nf3 = Number(document.getElementById('f3').value) || "";
         let ns1 = Number(document.getElementById('s1').value) || ""; let ns2 = Number(document.getElementById('s2').value) || ""; let ns3 = Number(document.getElementById('s3').value) || "";
 
-        if (isVerifyMode && !isFixingVerify) {
-            let existingRecord = null;
-            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify && q.employeeName === employeeName);
-            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id && v.employeeName === employeeName);
+        // ดึงของเก่ามารวม ถ้าไม่ใช่โหมดแก้ไข (isFixingVerify)
+        if (!isFixingVerify) {
+            let eFronts = []; let eStocks = [];
+            let foundOld = false;
 
+            // 1. หาในคิวมือถือที่ยังไม่ได้ส่ง
+            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id);
             if (qIdx > -1) {
-                existingRecord = offlineQueue[qIdx];
-                offlineQueue.splice(qIdx, 1);
-            } else if (vIdx > -1) {
-                existingRecord = verifyListRaw[vIdx];
+                let qItem = offlineQueue[qIdx];
+                eFronts = [qItem.front1, qItem.front2, qItem.front3];
+                eStocks = [qItem.stock1, qItem.stock2, qItem.stock3];
+                offlineQueue.splice(qIdx, 1); // เอากล่องเก่าออก
+                foundOld = true;
+            } else {
+                // 2. หาในรายการรอตรวจ หรือ รายการนับปกติ
+                let vItem = verifyListRaw.find(v => v.id === currentProduct.id);
+                if (vItem) {
+                    eFronts = [vItem.f1, vItem.f2, vItem.f3]; eStocks = [vItem.s1, vItem.s2, vItem.s3];
+                    foundOld = true;
+                } else if (countedDetailMap[currentProduct.id]) {
+                    let cItem = countedDetailMap[currentProduct.id];
+                    eFronts = [cItem.f1, cItem.f2, cItem.f3]; eStocks = [cItem.s1, cItem.s2, cItem.s3];
+                    foundOld = true;
+                }
             }
 
-            if (existingRecord) {
-                let eFronts = [Number(existingRecord.f1)||0, Number(existingRecord.f2)||0, Number(existingRecord.f3)||0].filter(v => v > 0);
-                let eStocks = [Number(existingRecord.s1)||0, Number(existingRecord.s2)||0, Number(existingRecord.s3)||0].filter(v => v > 0);
-                let nFronts = [Number(nf1)||0, Number(nf2)||0, Number(nf3)||0].filter(v => v > 0);
-                let nStocks = [Number(ns1)||0, Number(ns2)||0, Number(ns3)||0].filter(v => v > 0);
-
+            // ถ้าเจอของเก่า ให้เอามาบวกต่อช่อง
+            if (foundOld) {
+                eFronts = eFronts.map(Number).filter(v => v > 0); eStocks = eStocks.map(Number).filter(v => v > 0);
+                let nFronts = [nf1, nf2, nf3].map(Number).filter(v => v > 0); let nStocks = [ns1, ns2, ns3].map(Number).filter(v => v > 0);
+                
                 let mergedFronts = [...eFronts, ...nFronts];
                 let mergedStocks = [...eStocks, ...nStocks];
 
@@ -375,6 +373,8 @@
 
                 [nf1, nf2, nf3] = assignSlots(mergedFronts);
                 [ns1, ns2, ns3] = assignSlots(mergedStocks);
+                
+                isVerifyMode = true; // ถ้านับซ้ำของเดิม บังคับสถานะให้ไปรอตรวจ
             }
         }
 
@@ -402,10 +402,7 @@
           try {
               let updates = {};
               dataToSend.forEach(item => { updates[item.qId] = item; });
-
-              const response = await fetch(FIREBASE_URL, {
-                  method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates)
-              });
+              const response = await fetch(FIREBASE_URL, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
 
               if (response.ok) { 
                   const sentIds = dataToSend.map(d => d.qId);
@@ -432,14 +429,17 @@
         
         let autoMergeAlert = document.getElementById('autoMergeAlert');
         let empName = localStorage.getItem('stockAppUser');
-        let prevVerify = verifyListRaw.find(v => v.id === p.id && v.employeeName === empName);
-        let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify && q.employeeName === empName);
         
-        if (!isFixingVerify && !existingData && (prevVerify || qVerify)) {
-            let ev = qVerify ? {f1:qVerify.front1, f2:qVerify.front2, f3:qVerify.front3, s1:qVerify.stock1, s2:qVerify.stock2, s3:qVerify.stock3} : prevVerify;
-            let sumF = (Number(ev.f1)||0) + (Number(ev.f2)||0) + (Number(ev.f3)||0);
-            let sumS = (Number(ev.s1)||0) + (Number(ev.s2)||0) + (Number(ev.s3)||0);
-            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> คุณนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
+        // เช็คว่ามีนับไว้แล้วหรือไม่ เพื่อโชว์กล่องแจ้งเตือน
+        let qItem = offlineQueue.find(q => q.productId === p.id);
+        let vItem = verifyListRaw.find(v => v.id === p.id);
+        let cItem = countedDetailMap[p.id];
+        let oldData = qItem ? {f1:qItem.front1, f2:qItem.front2, f3:qItem.front3, s1:qItem.stock1, s2:qItem.stock2, s3:qItem.stock3} : (vItem ? vItem : cItem);
+
+        if (!isFixingVerify && !existingData && oldData) {
+            let sumF = (Number(oldData.f1)||0) + (Number(oldData.f2)||0) + (Number(oldData.f3)||0);
+            let sumS = (Number(oldData.s1)||0) + (Number(oldData.s2)||0) + (Number(oldData.s3)||0);
+            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> คุณเคยนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">พิมพ์จำนวนที่เจอเพิ่มในช่อง 1 ได้เลย ระบบจะเรียงต่อช่องให้อัตโนมัติ</span>`;
             autoMergeAlert.classList.remove('hidden');
         } else {
             autoMergeAlert.classList.add('hidden');
@@ -452,7 +452,9 @@
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
         
-        // ---- 🟢 เพิ่มปุ่มลบในโหมดรอตรวจ ----
+        // =====================================
+        // 🟢 ปุ่มลบรายการนับซ้ำ (รอตรวจ) 
+        // =====================================
         if (isFixingVerify) {
             document.getElementById('btnDelete').classList.remove('hidden');
             document.getElementById('btnDelete').innerHTML = '<i class="bi bi-trash"></i> ลบรายการนี้ออกจากการรอตรวจ';
@@ -464,10 +466,10 @@
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
       }
       
-      // ---- 🟢 ฟังก์ชันลบรายการรอตรวจ ----
+      // ฟังก์ชันส่งคำสั่งลบไปหา Google Sheets
       async function deleteVerifyItemFromSheet() {
           if(!currentProduct.id) return;
-          Swal.fire({ title: 'ลบออกจากรายการรอตรวจ?', text: 'ลบแล้วลบเลย', icon: 'warning', showCancelButton: true, confirmButtonText: 'ใช่, ลบเลย' }).then(async (result) => {
+          Swal.fire({ title: 'ลบออกจากรายการรอตรวจ?', text: 'คุณต้องการยกเลิกการนับซ้ำสินค้านี้ใช่หรือไม่?', icon: 'warning', showCancelButton: true, confirmButtonText: 'ใช่, ลบเลย' }).then(async (result) => {
               if(result.isConfirmed) {
                   showLoading("กำลังลบ...");
                   try {
@@ -591,7 +593,6 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-      // ---- 🟢 โหลดประวัติจาก Google Sheets โดยตรง ป้องกันประวัติหาย ----
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลดประวัติ...</div>'; 
@@ -614,7 +615,6 @@
           } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; }
       }
 
-      // ---- 🟢 ฟังก์ชันปุ่ม Admin ดึงข้อมูล ----
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
@@ -625,7 +625,7 @@
                       hideLoading();
                       Swal.fire('สำเร็จ', resData.message || 'เรียบร้อย', 'success');
                       loadHistory(); 
-                      fetchDynamicData(false); // สั่งอัปเดต Dashboard
+                      fetchDynamicData(false); // สั่งอัปเดตหน้าสรุปตัวเลขทันที
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
               }
           });
