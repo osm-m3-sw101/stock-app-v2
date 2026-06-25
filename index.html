@@ -313,35 +313,49 @@
 
       async function fetchDynamicData(isFirstLogin) {
           try {
+              // 1. ดึงข้อมูลประวัติที่ถูกลง Google Sheets ไปแล้ว
               const response = await fetch(GAS_API_URL + "?action=getDynamicData");
               const data = await response.json();
               if (data.error) throw new Error(data.error);
-              
-              rawCountedIds = data.countedRawIds || [];
-              countedDetailMap = data.countedDetailMap || {}; 
-              offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
-              uniqueCountedIds = new Set(rawCountedIds);
 
-              verifyListRaw = data.verifyListRaw || []; 
-              offlineQueue.forEach(q => { 
-                  if(q.isVerify) {
+              // 2. ดึงข้อมูลใหม่ที่ค้างอยู่ใน Firebase (ยังไม่ได้กดก้อนเมฆดึงลงชีต)
+              const FIREBASE_URL = "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json";
+              const fbResponse = await fetch(FIREBASE_URL);
+              const fbData = await fbResponse.json();
+
+              // 3. นำข้อมูลจาก Firebase มาผสมรวมกับข้อมูลของ Sheets
+              if (fbData) {
+                  if (!data.countedRawIds) data.countedRawIds = [];
+                  if (!data.countedDetailMap) data.countedDetailMap = {};
+                  if (!data.verifyListRaw) data.verifyListRaw = [];
+
+                  Object.values(fbData).forEach(q => {
                       let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
                       let diff = sum - (Number(q.currentStockRef)||0);
-                      let existingIdx = verifyListRaw.findIndex(v => v.id === q.productId);
-                      let newItem = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
-                      if (existingIdx > -1) verifyListRaw[existingIdx] = newItem; else verifyListRaw.push(newItem);
-                  }
-              });
-              uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
+                      let fullData = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
 
-              hideLoading(); 
-              if(isFirstLogin) switchTab('scan');
-              else if(lastActiveTab === 'dashboard') calculateDashboard();
+                      if (q.isVerify) {
+                          // ผสมรายการรอตรวจ
+                          let existingIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
+                          if (existingIdx > -1) data.verifyListRaw[existingIdx] = fullData; else data.verifyListRaw.push(fullData);
+                      } else {
+                          // ผสมรายการนับแล้ว
+                          data.countedRawIds.push(q.productId);
+                          data.countedDetailMap[q.productId] = fullData;
+                          
+                          // ลบออกจากรายการรอตรวจ (เผื่อเพิ่งนับปกติทับไป)
+                          let vIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
+                          if(vIdx > -1) data.verifyListRaw.splice(vIdx, 1);
+                      }
+                  });
+              }
+
+              // 4. ส่งข้อมูลที่ผสมเสร็จแล้วไปแสดงผลหน้าสรุป
+              processDynamicData(data, isFirstLogin);
           } catch(e) {
               hideLoading(); Swal.fire('Error', 'ไม่สามารถอัปเดตข้อมูลล่าสุดได้', 'error');
           }
       }
-
       function switchTab(tab) {
         document.getElementById('viewHome').classList.add('hidden'); document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewHistory').classList.add('hidden'); document.getElementById('viewDashboard').classList.add('hidden');
         document.getElementById('navScan').classList.remove('active'); document.getElementById('navHistory').classList.remove('active'); document.getElementById('navDashboard').classList.remove('active');
