@@ -2,6 +2,7 @@
 <html>
   <head>
     <base target="_top">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
@@ -12,6 +13,9 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
     <style>
       body { padding: 6px; background-color: #f4f6f9; font-family: 'Sarabun', sans-serif; padding-bottom: 90px; }
@@ -50,7 +54,7 @@
     <div id="loadingOverlay" class="hidden"><div class="spinner-border text-primary"></div><div class="mt-2 fw-bold text-dark" id="loadingText">กำลังทำงาน...</div></div>
 
     <div id="loginSection" class="container mt-5 hidden">
-      <div class="card p-4 text-center">
+      <div class="card p-4 text-center border-0 shadow-sm">
         <h3 class="mb-2">📦 ระบบเช็คสต๊อก</h3>
         <input type="text" id="employeeName" class="form-control mb-3 text-center" placeholder="ชื่อพนักงาน">
         <button onclick="login()" class="btn btn-primary w-100 btn-lg fw-bold">เข้าใช้งาน</button>
@@ -200,7 +204,22 @@
     </div>
 
     <script>
-      let currentProduct = {}, isScannerRunning = false, isScanProcessing = false, isLinkMode = false, isManualClose = false, pendingBarcode = "", allProducts = [], editRecordId = null;
+      // 🔴 การตั้งค่าการเชื่อมต่อ (แก้เป็น Fetch API)
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzvI4hoj2Q4fLv4Y21u7zZg6SptAudO92wajXPJGpAK0j9ByZQJRFd7TD156OdD_7xT/exec";
+      
+      const firebaseConfig = {
+      apiKey: "AIzaSyCXlWd...", // (ของคุณจะยาวกว่านี้ ก๊อปมาให้ครบนะครับ)
+      authDomain: "stockpro-88a22.firebaseapp.com",
+      databaseURL: "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "stockpro-88a22",
+      storageBucket: "stockpro-88a22.appspot.com",
+      messagingSenderId: "148858273646",
+      appId: "1:148858273646:web:..." // (ของคุณจะยาวกว่านี้)
+    };
+      if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+      const database = firebase.database();
+
+      let currentProduct = {}, isScannerRunning = false, isScanProcessing = false, isLinkMode = false, isManualClose = false, pendingBarcode = "", allProducts = [], editRowNumber = null;
       let rawCountedIds = [], uniqueCountedIds = new Set();
       let countedDetailMap = {}; 
       let verifyListRaw = [], uniqueVerifyIds = new Set();
@@ -215,7 +234,7 @@
       let offlineQueue = JSON.parse(localStorage.getItem('offlineQueue')) || [];
       let isSyncing = false; 
       const AUTO_SYNC_LIMIT = 50; 
-      const AUTO_SYNC_TIMER = 60000;
+      const AUTO_SYNC_TIMER = 30000; // ตรวจสอบการส่งข้อมูลทุก 30 วินาที
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       
@@ -232,24 +251,12 @@
 
         updateQueueBadge();
         setInterval(() => { if(offlineQueue.length > 0) syncBatchData(); }, AUTO_SYNC_TIMER);
-
+        
         const bottomNav = document.querySelector('.bottom-nav');
         const allInputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="search"]');
-        
         allInputs.forEach(input => {
-            input.addEventListener('focus', () => {
-                bottomNav.classList.add('hidden');
-                document.body.style.paddingBottom = "10px";
-            });
-            input.addEventListener('blur', () => {
-                setTimeout(() => {
-                    const activeElement = document.activeElement;
-                    if (activeElement.tagName !== 'INPUT') {
-                        bottomNav.classList.remove('hidden');
-                        document.body.style.paddingBottom = "90px";
-                    }
-                }, 100);
-            });
+            input.addEventListener('focus', () => { bottomNav.classList.add('hidden'); document.body.style.paddingBottom = "10px"; });
+            input.addEventListener('blur', () => { setTimeout(() => { const activeElement = document.activeElement; if (activeElement.tagName !== 'INPUT') { bottomNav.classList.remove('hidden'); document.body.style.paddingBottom = "90px"; } }, 100); });
         });
       };
 
@@ -262,26 +269,44 @@
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
-      // 🚨 ตรวจสอบให้แน่ใจว่า URL นี้เป็นตัวล่าสุดที่คุณเพิ่ง Deploy มาใหม่นะครับ
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzvI4hoj2Q4fLv4Y21u7zZg6SptAudO92wajXPJGpAK0j9ByZQJRFd7TD156OdD_7xT/exec";
-
+      // 🔴 ปรับไปใช้ Fetch ดึงทีเดียวจบ
       async function syncData(isFirstLogin) {
-        showLoading("กำลังเตรียมระบบ...");
+        showLoading("โหลดสต๊อก & ตรวจสอบ...");
         const cachedProducts = localStorage.getItem('localStockData');
         if (cachedProducts) {
             allProducts = JSON.parse(cachedProducts);
             await fetchDynamicData(isFirstLogin);
         } else {
-            showLoading("โหลดฐานข้อมูล 17,000 รายการ (ครั้งแรก)...");
             try {
                 const response = await fetch(GAS_API_URL + "?action=getAllData");
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
+                
                 allProducts = data.products || [];
                 localStorage.setItem('localStockData', JSON.stringify(allProducts));
-                processDynamicData(data, isFirstLogin);
-            } catch (err) {
-                hideLoading(); Swal.fire('Error', 'โหลดฐานข้อมูลล้มเหลว: ' + err.message, 'error'); 
+                
+                rawCountedIds = data.countedRawIds || [];
+                countedDetailMap = data.countedDetailMap || {}; 
+                offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
+                uniqueCountedIds = new Set(rawCountedIds);
+
+                verifyListRaw = data.verifyListRaw || []; 
+                offlineQueue.forEach(q => { 
+                    if(q.isVerify) {
+                        let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
+                        let diff = sum - (Number(q.currentStockRef)||0);
+                        let existingIdx = verifyListRaw.findIndex(v => v.id === q.productId);
+                        let newItem = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
+                        if (existingIdx > -1) verifyListRaw[existingIdx] = newItem; else verifyListRaw.push(newItem);
+                    }
+                });
+                uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
+
+                hideLoading(); 
+                if(isFirstLogin) switchTab('scan');
+                else if(lastActiveTab === 'dashboard') calculateDashboard();
+            } catch(e) {
+                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
             }
         }
       }
@@ -290,43 +315,31 @@
           try {
               const response = await fetch(GAS_API_URL + "?action=getDynamicData");
               const data = await response.json();
-              processDynamicData(data, isFirstLogin);
-          } catch (err) {
-              hideLoading(); Swal.fire('Error', 'เชื่อมต่อข้อมูลล้มเหลว', 'error'); 
+              if (data.error) throw new Error(data.error);
+              
+              rawCountedIds = data.countedRawIds || [];
+              countedDetailMap = data.countedDetailMap || {}; 
+              offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
+              uniqueCountedIds = new Set(rawCountedIds);
+
+              verifyListRaw = data.verifyListRaw || []; 
+              offlineQueue.forEach(q => { 
+                  if(q.isVerify) {
+                      let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
+                      let diff = sum - (Number(q.currentStockRef)||0);
+                      let existingIdx = verifyListRaw.findIndex(v => v.id === q.productId);
+                      let newItem = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
+                      if (existingIdx > -1) verifyListRaw[existingIdx] = newItem; else verifyListRaw.push(newItem);
+                  }
+              });
+              uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
+
+              hideLoading(); 
+              if(isFirstLogin) switchTab('scan');
+              else if(lastActiveTab === 'dashboard') calculateDashboard();
+          } catch(e) {
+              hideLoading(); Swal.fire('Error', 'ไม่สามารถอัปเดตข้อมูลล่าสุดได้', 'error');
           }
-      }
-
-      function processDynamicData(data, isFirstLogin) {
-          rawCountedIds = data.countedRawIds || [];
-          countedDetailMap = data.countedDetailMap || {}; 
-
-          offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
-          uniqueCountedIds = new Set(rawCountedIds);
-
-          verifyListRaw = data.verifyListRaw || []; 
-          offlineQueue.forEach(q => { 
-              if(q.isVerify) {
-                  let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
-                  let diff = sum - (Number(q.currentStockRef)||0);
-                  let existingIdx = verifyListRaw.findIndex(v => v.id === q.productId);
-                  let newItem = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
-                  if (existingIdx > -1) verifyListRaw[existingIdx] = newItem; else verifyListRaw.push(newItem);
-              }
-          });
-          uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
-
-          hideLoading(); 
-          if(isFirstLogin) switchTab('scan');
-          else if(lastActiveTab === 'dashboard') calculateDashboard();
-      }
-
-      function forceUpdateMasterData() {
-          Swal.fire({ title: 'อัปเดตฐานข้อมูล?', text: 'โหลดรายชื่อสินค้าใหม่จากเซิร์ฟเวอร์', icon: 'info', showCancelButton: true, confirmButtonText: 'อัปเดต' }).then((result) => {
-              if (result.isConfirmed) {
-                  localStorage.removeItem('localStockData'); 
-                  syncData(false); 
-              }
-          });
       }
 
       function switchTab(tab) {
@@ -336,50 +349,84 @@
         if(tab === 'scan') { document.getElementById('viewHome').classList.remove('hidden'); document.getElementById('navScan').classList.add('active'); if(!document.getElementById('searchInput').value) setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 500); } else if (tab === 'dashboard') { safeStopScanner(); document.getElementById('viewDashboard').classList.remove('hidden'); document.getElementById('navDashboard').classList.add('active'); if(savedFilterType) document.getElementById('filterType').value = savedFilterType; populateFilterValues(); if(savedFilterValue) { const select = document.getElementById('selFilterValue'); let exists = false; for (let i = 0; i < select.options.length; i++) { if (select.options[i].value === savedFilterValue) { exists = true; break; } } if(exists) { select.value = savedFilterValue; calculateDashboard(); } } } else { safeStopScanner(); document.getElementById('viewHistory').classList.remove('hidden'); document.getElementById('navHistory').classList.add('active'); loadHistory(); }
       }
 
-      // ---- 🟢 แก้ไข: ฟังก์ชันนับซ้ำให้บันทึกได้อิสระ ----
       function saveData(isVerifyMode) {
+        if (editRowNumber) { saveSingleUpdate(); return; }
+
         let employeeName = localStorage.getItem('stockAppUser');
-        let nf1 = Number(document.getElementById('f1').value) || "";
-        let nf2 = Number(document.getElementById('f2').value) || "";
-        let nf3 = Number(document.getElementById('f3').value) || "";
-        let ns1 = Number(document.getElementById('s1').value) || "";
-        let ns2 = Number(document.getElementById('s2').value) || "";
-        let ns3 = Number(document.getElementById('s3').value) || "";
+        let nf1 = Number(document.getElementById('f1').value) || ""; let nf2 = Number(document.getElementById('f2').value) || ""; let nf3 = Number(document.getElementById('f3').value) || "";
+        let ns1 = Number(document.getElementById('s1').value) || ""; let ns2 = Number(document.getElementById('s2').value) || ""; let ns3 = Number(document.getElementById('s3').value) || "";
+
+        if (isVerifyMode && !isFixingVerify) {
+            let existingRecord = null;
+            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify && q.employeeName === employeeName);
+            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id && v.employeeName === employeeName);
+
+            if (qIdx > -1) {
+                existingRecord = offlineQueue[qIdx];
+                offlineQueue.splice(qIdx, 1); 
+            } else if (vIdx > -1) {
+                existingRecord = verifyListRaw[vIdx];
+                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id)); 
+            }
+
+            if (existingRecord) {
+                let eFronts = [Number(existingRecord.f1)||0, Number(existingRecord.f2)||0, Number(existingRecord.f3)||0].filter(v => v > 0);
+                let eStocks = [Number(existingRecord.s1)||0, Number(existingRecord.s2)||0, Number(existingRecord.s3)||0].filter(v => v > 0);
+                let nFronts = [Number(nf1)||0, Number(nf2)||0, Number(nf3)||0].filter(v => v > 0);
+                let nStocks = [Number(ns1)||0, Number(ns2)||0, Number(ns3)||0].filter(v => v > 0);
+                let mergedFronts = [...eFronts, ...nFronts];
+                let mergedStocks = [...eStocks, ...nStocks];
+                const assignSlots = (arr) => { let s1 = arr[0] || ""; let s2 = arr[1] || ""; let s3 = arr[2] || ""; if (arr.length > 3) { s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); } return [s1, s2, s3]; };
+                [nf1, nf2, nf3] = assignSlots(mergedFronts);
+                [ns1, ns2, ns3] = assignSlots(mergedStocks);
+            }
+        }
 
         const data = { 
             qId: Date.now().toString(36) + Math.random().toString(36).substring(2),
-            productId: currentProduct.id, 
-            productName: currentProduct.name, 
-            currentStockRef: Number(currentProduct.stock)||0, 
-            front1: nf1, front2: nf2, front3: nf3, 
-            stock1: ns1, stock2: ns2, stock3: ns3, 
-            employeeName: employeeName, 
-            timestamp: new Date().getTime(), 
-            isVerify: isVerifyMode 
+            productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, 
+            front1: nf1, front2: nf2, front3: nf3, stock1: ns1, stock2: ns2, stock3: ns3, 
+            employeeName: employeeName, timestamp: new Date().getTime(), isVerify: isVerifyMode 
         };
         
         offlineQueue.push(data); localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
+        
+        let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
+        let diff = sum - (Number(data.currentStockRef)||0);
+        let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: data.employeeName };
+
+        if (isVerifyMode) { 
+            uniqueVerifyIds.add(data.productId); 
+            let existingIdx = verifyListRaw.findIndex(v => v.id === data.productId);
+            if(existingIdx > -1) verifyListRaw[existingIdx] = fullData; else verifyListRaw.push(fullData);
+        } else { 
+             rawCountedIds.push(data.productId); uniqueCountedIds.add(data.productId);
+             countedDetailMap[data.productId] = fullData;
+             if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
+                 uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
+                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId));
+                 
+                 offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
+                 localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
+             }
+        }
         updateQueueBadge(); cancelForm(); 
         const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกแล้ว';
         const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
-        Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg}`});
-        syncBatchData(); 
+        Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
+        syncBatchData();
       }
 
+      // 🔴 ส่งข้อมูลรวดเดียวเข้า Firebase
       async function syncBatchData() { 
           if (isSyncing || offlineQueue.length === 0) return; 
-          isSyncing = true; 
-          updateQueueBadge(); 
+          isSyncing = true; updateQueueBadge(); 
           const dataToSend = [...offlineQueue]; 
           
-          const FIREBASE_URL = "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json";
-
           try {
               let updates = {};
-              dataToSend.forEach(item => {
-                  updates[item.qId] = item; 
-              });
-
+              dataToSend.forEach(item => { updates[item.qId] = item; });
+              const FIREBASE_URL = "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json";
               const response = await fetch(FIREBASE_URL, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
@@ -392,18 +439,14 @@
                   if(offlineQueue.length < 0) offlineQueue = []; 
                   localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue)); 
                   updateQueueBadge(); 
-              } else {
-                  updateQueueBadge(); 
-              }
+              } else { updateQueueBadge(); }
           } catch (error) {
-              console.log("Firebase Sync Error: ", error);
-              updateQueueBadge(); 
+              console.log("Firebase Sync Error: ", error); updateQueueBadge(); 
           } finally {
-              isSyncing = false;
-              updateQueueBadge();
+              isSyncing = false; updateQueueBadge();
           }
       }
-      
+
       function updateQueueBadge() { const badge = document.getElementById('queueStatusBadge'); if (offlineQueue.length > 0) { badge.classList.remove('hidden'); if(isSyncing) { badge.className = 'badge rounded-pill bg-info text-dark me-2'; badge.innerHTML = `<span class="spinner-border spinner-border-sm" style="width:10px;height:10px"></span> ส่งข้อมูล...`; } else { badge.className = 'badge rounded-pill bg-warning text-dark me-2'; badge.innerText = `รอส่ง: ${offlineQueue.length}`; } } else { badge.classList.add('hidden'); } }
       function handleEnter(e) { if(e.key === 'Enter') searchProduct(); }
       function searchProduct(k) { let keyword = k || document.getElementById('searchInput').value; keyword = (keyword || "").trim(); isScanProcessing = false; if(!keyword) return; if(!allProducts || allProducts.length === 0) { Swal.fire({title: 'ข้อมูลยังไม่พร้อม', text: 'กำลังโหลด...', timer: 1500, showConfirmButton: false}); syncData(); return; } if(keyword.includes(',')) keyword = keyword.split(',')[0].trim(); const lowK = keyword.toLowerCase(); const matches = []; for(const p of allProducts) { if ((p.allIds||"").includes(lowK) || (p.name||"").toLowerCase().includes(lowK) || (p.subCode||"").toLowerCase().includes(lowK) || (p.dept||"").toLowerCase().includes(lowK)) matches.push(p); if(matches.length > 25) break; } document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('searchListArea').classList.add('hidden'); if(matches.length === 0) { if(isLinkMode) { Swal.fire('ไม่พบสินค้า', '', 'warning'); return; } document.getElementById('notFoundArea').classList.remove('hidden'); document.getElementById('notFoundCode').innerText = keyword; } else if (matches.length === 1) { if(isLinkMode) confirmLinkBarcode(matches[0]); else openForm(matches[0], false, keyword); } else { document.getElementById('viewHome').classList.remove('hidden'); document.getElementById('searchListArea').classList.remove('hidden'); const con = document.getElementById('listContainer'); con.innerHTML = ''; matches.forEach(item => { const div = document.createElement('a'); div.className = 'list-group-item list-group-item-action py-2'; div.innerHTML = `<div class="fw-bold text-truncate">${item.name}</div><div class="d-flex align-items-center mt-1 flex-wrap"><span class="badge badge-dept me-1">${item.dept}</span> <small class="text-muted">${item.id}</small></div>`; div.onclick = () => { if(isLinkMode) confirmLinkBarcode(item); else openForm(item, false, item.id); }; con.appendChild(div); }); } }
@@ -428,9 +471,7 @@
             let sumS = (Number(ev.s1)||0) + (Number(ev.s2)||0) + (Number(ev.s3)||0);
             autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> คุณนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
             autoMergeAlert.classList.remove('hidden');
-        } else {
-            autoMergeAlert.classList.add('hidden');
-        }
+        } else { autoMergeAlert.classList.add('hidden'); }
 
         document.querySelectorAll('.input-qty').forEach(el => el.value = ''); 
         if (existingData) {
@@ -441,58 +482,10 @@
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
       }
       
-      function cancelForm() { 
-          isFixingVerify = false; 
-          safeStopScanner(); 
-          if (editRecordId) { 
-              editRecordId = null; 
-              switchTab('history'); 
-          } else { 
-              editRecordId = null; 
-              if (lastActiveTab === 'dashboard') { switchTab('dashboard'); } 
-              else if (lastActiveTab === 'history') { switchTab('history'); } 
-              else { switchTab('scan'); resetSearch(); } 
-          } 
-      }
-      
+      function cancelForm() { isFixingVerify = false; safeStopScanner(); if (editRowNumber) { editRowNumber = null; switchTab('history'); } else { editRowNumber = null; if (lastActiveTab === 'dashboard') { switchTab('dashboard'); } else if (lastActiveTab === 'history') { switchTab('history'); } else { switchTab('scan'); resetSearch(); } } }
       function resetSearch() { document.getElementById('searchInput').value = ''; document.getElementById('searchInput').placeholder = isLinkMode ? 'สแกนรหัสเดิม...' : 'รหัส / ชื่อ / แผนก...'; document.getElementById('lastScanResult').classList.add('hidden'); document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('searchListArea').classList.add('hidden'); isScanProcessing = false; if (!document.getElementById('viewHome').classList.contains('hidden')) setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 300); }
       function toggleScanner() { if(isCameraBusy) return; if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); } if(isScannerRunning) safeStopScanner(); else { document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); initCamera(); } }
-      
-      function initCamera() { 
-        isManualClose = false; 
-        document.getElementById('camStatus').innerText = "ค้นหากล้อง..."; 
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-        if (isIOS) {
-            useFacingModeFallback = true;
-            document.getElementById('switchCamBtn').classList.remove('hidden'); 
-            startCameraByFacingMode("environment");
-        } else {
-            Html5Qrcode.getCameras().then(devices => { 
-              if (devices && devices.length) { 
-                devices.sort((a, b) => { 
-                  const A=a.label.toLowerCase(), B=b.label.toLowerCase(); 
-                  const bA=A.includes('back')||A.includes('rear')||A.includes('environment'); 
-                  const bB=B.includes('back')||B.includes('rear')||B.includes('environment'); 
-                  if(bA && !bB) return -1; 
-                  if(!bA && bB) return 1; 
-                  return 0; 
-                }); 
-                availableCameras = devices; 
-                currentCameraIndex = 0; 
-                if(devices.length > 1) document.getElementById('switchCamBtn').classList.remove('hidden'); 
-                startCameraByIndex(currentCameraIndex); 
-              } else { 
-                useFacingModeFallback = true; 
-                startCameraByFacingMode("environment"); 
-              } 
-            }).catch(e => { 
-              useFacingModeFallback = true; 
-              startCameraByFacingMode("environment"); 
-            });
-        }
-      }
-
+      function initCamera() { isManualClose = false; document.getElementById('camStatus').innerText = "ค้นหากล้อง..."; Html5Qrcode.getCameras().then(devices => { if (devices && devices.length) { devices.sort((a, b) => { const A=a.label.toLowerCase(), B=b.label.toLowerCase(); const bA=A.includes('back')||A.includes('rear')||A.includes('environment'); const bB=B.includes('back')||B.includes('rear')||B.includes('environment'); if(bA && !bB) return -1; if(!bA && bB) return 1; return 0; }); availableCameras = devices; currentCameraIndex = 0; if(devices.length > 1) document.getElementById('switchCamBtn').classList.remove('hidden'); startCameraByIndex(currentCameraIndex); } else { useFacingModeFallback = true; startCameraByFacingMode("environment"); } }).catch(e => { useFacingModeFallback = true; startCameraByFacingMode("environment"); }); }
       function nextCamera() { if(isCameraBusy) return; safeStopScanner(true).then(() => { setTimeout(() => { isManualClose = false; if (useFacingModeFallback) { const s=document.getElementById('camStatus').innerText; const m=(s.includes("หลัง")||s.includes("environment"))?"user":"environment"; startCameraByFacingMode(m); } else { if(availableCameras.length<2) return; currentCameraIndex=(currentCameraIndex+1)%availableCameras.length; startCameraByIndex(currentCameraIndex); } }, 500); }); }
       function startCameraByIndex(i) { if(isManualClose) return; document.getElementById('camStatus').innerText=`กล้อง ${i+1}`; const cameraId = availableCameras[i].id; getScanner().start({ deviceId: { exact: cameraId } }, {fps:10, qrbox:{width:280,height:180}, aspectRatio:1.0}, onScanSuccess, ()=>{}).then(()=>{isScannerRunning=true; isCameraBusy=false;}).catch(e => { getScanner().start(cameraId, {fps:10, qrbox:{width:280,height:180}, aspectRatio:1.0}, onScanSuccess, ()=>{}).then(()=>{isScannerRunning=true; isCameraBusy=false;}).catch(err => { document.getElementById('camStatus').innerText="Err"; isCameraBusy=false; }); }); }
       function startCameraByFacingMode(m) { if(isManualClose) return; document.getElementById('camStatus').innerText=`เปิด ${m}`; getScanner().start({facingMode:m}, {fps:10, qrbox:{width:280,height:180}, aspectRatio:1.0}, onScanSuccess, ()=>{}).then(()=>{isScannerRunning=true; isCameraBusy=false;}).catch(e=>{document.getElementById('camStatus').innerText="Err"; isCameraBusy=false;}); }
@@ -559,13 +552,23 @@
           });
       }
 
+      // 🔴 ปรับการส่งออกข้อมูลให้ใช้ Fetch 
       function handleExport(mode) { 
           let list = []; let typeText = ""; let filterInfo = { type: document.getElementById('filterType').options[document.getElementById('filterType').selectedIndex].text, value: document.getElementById('selFilterValue').value };
           if (mode === 'all') { list = getAllItemsForReport(); typeText = "รายการทั้งหมด (รวมทุกสถานะ)"; if (list.length === 0) return Swal.fire('แจ้งเตือน', 'กรุณาเลือกเงื่อนไขก่อน (แผนก/รหัสซับ)', 'warning'); printData(list, typeText, filterInfo); return; }
           const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
           if (list.length === 0) return Swal.fire('ไม่มีข้อมูล', '', 'warning');
           
-          if (mode === 'sheet') { Swal.fire('แจ้งเตือน', 'กรุณาส่งออกผ่านระบบ Google Sheets บนคอมพิวเตอร์ครับ', 'info'); } 
+          if (mode === 'sheet') { 
+              showLoading("กำลังส่งข้อมูลลงชีต..."); 
+              fetch(GAS_API_URL + "?action=saveReport&reportType=" + encodeURIComponent(typeText) + "&filterType=" + encodeURIComponent(filterInfo.type) + "&filterValue=" + encodeURIComponent(filterInfo.value), {
+                  method: 'POST', body: JSON.stringify(list)
+              }).then(r => r.json()).then(r => { 
+                  hideLoading(); 
+                  if(r.success) Swal.fire('สำเร็จ', `บันทึกลงชีต "${r.sheetName}" แล้ว`, 'success'); 
+                  else Swal.fire('Error', r.error, 'error'); 
+              }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); });
+          } 
           else if (mode === 'csv') downloadCSV(list, typeText); 
           else if (mode === 'print') printData(list, typeText, filterInfo); 
       }
@@ -593,57 +596,37 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
+      // 🔴 แก้ไขและลบประวัติโดยตรงไม่ทำผ่านแอปมือถือแล้ว
       function deleteCurrentHistory() { Swal.fire('แจ้งเตือน', 'การลบประวัติต้องทำผ่านระบบหลังบ้าน (Google Sheets) ครับ', 'info'); }
       function saveSingleUpdate() { Swal.fire('แจ้งเตือน', 'การแก้ไขประวัติต้องทำผ่านระบบหลังบ้าน (Google Sheets) ครับ', 'info'); cancelForm(); }
       
-      // 🟢 ฟังก์ชันนี้ถูกแก้ไขจาก google.script.run เป็น fetch เพื่อให้ใช้บน GitHub ได้
-      function confirmLinkBarcode(product) { Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then((result) => { if (result.isConfirmed) { showLoading("บันทึก..."); fetch(GAS_API_URL + "?action=appendBarcode&targetMainId=" + encodeURIComponent(product.id) + "&newBarcode=" + encodeURIComponent(pendingBarcode)).then(r => r.json()).then(res => { hideLoading(); if(res.error) throw new Error(res.error); isScanProcessing=false; isLinkMode=false; safeStopScanner(); const savedCode = pendingBarcode; pendingBarcode=""; document.getElementById('linkModeBar').classList.add('hidden'); document.getElementById('searchInput').value = ''; syncData(); openForm(product, false, savedCode); }).catch(err => { hideLoading(); Swal.fire('Error', err.message, 'error'); }); } }); }
+      function openFormFromHistory(r) { editRowNumber = r.sheetRow; let found = allProducts.find(p => p.id === r.id); const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); document.getElementById('btnDelete').classList.remove('hidden'); }
       
-      function openFormFromHistory(r) { 
-          editRecordId = r._ts; 
-          let found = allProducts.find(p => p.id === r.productId); 
-          const mock = { id: r.productId, name: r.productName, stock: found?found.stock:0, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; 
-          openForm(mock, true, r.productId, {f1:r.front1, f2:r.front2, f3:r.front3, s1:r.stock1, s2:r.stock2, s3:r.stock3}); 
-          document.getElementById('btnDelete').classList.remove('hidden'); 
-      }
-      
+      // 🔴 โหลดประวัติผ่าน Fetch 
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
-          
           try {
-              const res = await fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json");
-              const data = await res.json();
+              const res = await fetch(GAS_API_URL + "?action=getHistory");
+              const rows = await res.json();
               list.innerHTML = ''; 
-              if(!data) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
-              
+              if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
               const groups = {}; 
-              Object.values(data).forEach(r => { 
-                  const d = new Date(r.timestamp).toLocaleDateString('th-TH');
-                  const k = `${d}||${r.employeeName}`; 
-                  if(!groups[k]) groups[k]=[]; 
-                  r.timeStr = new Date(r.timestamp).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'});
-                  groups[k].push(r); 
-              }); 
-              
+              rows.forEach(r => { const k = `${r.dateGroup}||${r.emp}`; if(!groups[k]) groups[k]=[]; groups[k].push(r); }); 
               for (const key in groups) { 
-                  const [d, e] = key.split('||'); 
-                  const h = document.createElement('div'); 
-                  h.className = 'group-header'; 
-                  h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; 
-                  list.appendChild(h); 
-                  
-                  groups[key].reverse().forEach(r => { 
-                      const div = document.createElement('div'); 
-                      div.className = 'group-item'; 
-                      div.onclick = function() { openFormFromHistory(r); };
-                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.productName}</div><small class="text-muted">${r.timeStr}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.productId}</small></div>`; 
+                  const [d, e] = key.split('||'); const h = document.createElement('div'); h.className = 'group-header'; 
+                  h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; list.appendChild(h); 
+                  groups[key].forEach(r => { 
+                      const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const div = document.createElement('div'); div.className = 'group-item'; div.onclick = function() { openFormFromHistory(r); }; 
+                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
                       list.appendChild(div); 
                   }); 
               } 
           } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; }
       }
 
+      // ☁️ ฟังก์ชันก้อนเมฆ (ดึงข้อมูลลงชีต)
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
@@ -660,9 +643,28 @@
               }
           });
       }
-      
+
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) initCamera(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
+      
+      // 🔴 การผูกรหัสบาร์โค้ดเสริม ผ่าน Fetch
+      function confirmLinkBarcode(product) { 
+          Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then((result) => { 
+              if (result.isConfirmed) { 
+                  showLoading("บันทึก..."); 
+                  fetch(GAS_API_URL + "?action=appendBarcode&targetMainId=" + encodeURIComponent(product.id) + "&newBarcode=" + encodeURIComponent(pendingBarcode))
+                  .then(r => r.json()).then(res => { 
+                      hideLoading(); 
+                      if(res.error) throw new Error(res.error);
+                      isScanProcessing=false; isLinkMode=false; safeStopScanner(); 
+                      const savedCode = pendingBarcode; pendingBarcode=""; 
+                      document.getElementById('linkModeBar').classList.add('hidden'); 
+                      document.getElementById('searchInput').value = ''; 
+                      syncData(); openForm(product, false, savedCode); 
+                  }).catch(err => { hideLoading(); Swal.fire('Error', err.message, 'error'); }); 
+              } 
+          }); 
+      }
       
       document.addEventListener('input', (e) => { if (e.target && e.target.classList.contains('input-qty')) calculateTotal(); });
       function calculateTotal() { let sum = 0; document.querySelectorAll('.input-qty').forEach(el => sum += Number(el.value)||0); document.getElementById('totalCount').innerText = sum; const diff = sum - (Number(currentProduct.stock) || 0); document.getElementById('diffVal').innerText = (diff>0?"+":"") + diff; }
