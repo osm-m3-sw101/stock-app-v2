@@ -313,50 +313,47 @@
 
       async function fetchDynamicData(isFirstLogin) {
           try {
-              // 1. ดึงข้อมูลประวัติที่ถูกลง Google Sheets ไปแล้ว
-              const response = await fetch(GAS_API_URL + "?action=getDynamicData");
-              const data = await response.json();
-              if (data.error) throw new Error(data.error);
+              // ใช้ Cache-Control: no-cache เพื่อป้องกันการจำค่าเก่า
+              const headers = { 'Cache-Control': 'no-cache' };
+              
+              const [resGAS, resFB] = await Promise.all([
+                  fetch(GAS_API_URL + "?action=getDynamicData", { headers }),
+                  fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json", { headers })
+              ]);
 
-              // 2. ดึงข้อมูลใหม่ที่ค้างอยู่ใน Firebase (ยังไม่ได้กดก้อนเมฆดึงลงชีต)
-              const FIREBASE_URL = "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json";
-              const fbResponse = await fetch(FIREBASE_URL);
-              const fbData = await fbResponse.json();
+              const data = await resGAS.json();
+              const fbData = await resFB.json();
 
-              // 3. นำข้อมูลจาก Firebase มาผสมรวมกับข้อมูลของ Sheets
+              // เช็คความเรียบร้อยก่อนประมวลผล
+              if (!data.countedRawIds) data.countedRawIds = [];
+              if (!data.countedDetailMap) data.countedDetailMap = {};
+              
               if (fbData) {
-                  if (!data.countedRawIds) data.countedRawIds = [];
-                  if (!data.countedDetailMap) data.countedDetailMap = {};
-                  if (!data.verifyListRaw) data.verifyListRaw = [];
-
                   Object.values(fbData).forEach(q => {
+                      // เช็คว่ามี productId หรือยัง ถ้าไม่มีให้ข้าม (ป้องกัน Error ข้อมูลพัง)
+                      if (!q || !q.productId) return;
+
                       let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
                       let diff = sum - (Number(q.currentStockRef)||0);
                       let fullData = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
 
                       if (q.isVerify) {
-                          // ผสมรายการรอตรวจ
-                          let existingIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
-                          if (existingIdx > -1) data.verifyListRaw[existingIdx] = fullData; else data.verifyListRaw.push(fullData);
+                          if (!data.verifyListRaw) data.verifyListRaw = [];
+                          data.verifyListRaw.push(fullData);
                       } else {
-                          // ผสมรายการนับแล้ว
                           data.countedRawIds.push(q.productId);
                           data.countedDetailMap[q.productId] = fullData;
-                          
-                          // ลบออกจากรายการรอตรวจ (เผื่อเพิ่งนับปกติทับไป)
-                          let vIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
-                          if(vIdx > -1) data.verifyListRaw.splice(vIdx, 1);
                       }
                   });
               }
 
-              // 4. ส่งข้อมูลที่ผสมเสร็จแล้วไปแสดงผลหน้าสรุป
               processDynamicData(data, isFirstLogin);
           } catch(e) {
-              hideLoading(); Swal.fire('Error', 'ไม่สามารถอัปเดตข้อมูลล่าสุดได้', 'error');
+              console.error("Error loading data:", e);
+              // ถ้า Error ให้ลองแสดงผลข้อมูลเก่าที่มีใน Cache ไปก่อน แทนที่จะโชว์ Error
+              Swal.fire({ title: 'แจ้งเตือน', text: 'ข้อมูลอาจจะอัปเดตไม่สมบูรณ์ (ลองกดรีเฟรชอีกครั้ง)', icon: 'warning', timer: 2000 });
           }
       }
-
       function switchTab(tab) {
         document.getElementById('viewHome').classList.add('hidden'); document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewHistory').classList.add('hidden'); document.getElementById('viewDashboard').classList.add('hidden');
         document.getElementById('navScan').classList.remove('active'); document.getElementById('navHistory').classList.remove('active'); document.getElementById('navDashboard').classList.remove('active');
