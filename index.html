@@ -269,68 +269,52 @@
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
-      // 🔴 ปรับไปใช้ Fetch ดึงทีเดียวจบ
       async function syncData(isFirstLogin) {
-        showLoading("โหลดสต๊อก & ตรวจสอบ...");
+        showLoading("กำลังเชื่อมต่อข้อมูล...");
         const cachedProducts = localStorage.getItem('localStockData');
         if (cachedProducts) {
             allProducts = JSON.parse(cachedProducts);
             await fetchDynamicData(isFirstLogin);
         } else {
             try {
-                const response = await fetch(GAS_API_URL + "?action=getAllData");
+                // เพิ่ม &t=... ต่อท้าย URL เพื่อบังคับให้โหลดใหม่โดยไม่ติด CORS
+                const t = new Date().getTime();
+                const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t);
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
-                
+
                 allProducts = data.products || [];
                 localStorage.setItem('localStockData', JSON.stringify(allProducts));
                 
-                rawCountedIds = data.countedRawIds || [];
-                countedDetailMap = data.countedDetailMap || {}; 
-                offlineQueue.forEach(q => { if(!q.isVerify) rawCountedIds.push(q.productId); });
-                uniqueCountedIds = new Set(rawCountedIds);
-
-                verifyListRaw = data.verifyListRaw || []; 
-                offlineQueue.forEach(q => { 
-                    if(q.isVerify) {
-                        let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
-                        let diff = sum - (Number(q.currentStockRef)||0);
-                        let existingIdx = verifyListRaw.findIndex(v => v.id === q.productId);
-                        let newItem = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
-                        if (existingIdx > -1) verifyListRaw[existingIdx] = newItem; else verifyListRaw.push(newItem);
-                    }
-                });
-                uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
-
-                hideLoading(); 
-                if(isFirstLogin) switchTab('scan');
-                else if(lastActiveTab === 'dashboard') calculateDashboard();
-            } catch(e) {
-                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                processDynamicData(data, isFirstLogin);
+            } catch (err) {
+                hideLoading();
+                Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
             }
         }
       }
 
       async function fetchDynamicData(isFirstLogin) {
           try {
-              // ใช้ Cache-Control: no-cache เพื่อป้องกันการจำค่าเก่า
-              const headers = { 'Cache-Control': 'no-cache' };
+              // ใช้ &t= ตัวเลขเวลาปัจจุบัน เพื่อหลอกเบราว์เซอร์ว่าเป็นลิงก์ใหม่ (กัน Cache)
+              const t = new Date().getTime();
               
+              // ❌ ลบ { headers } ออกให้หมด เพื่อไม่ให้เบราว์เซอร์บล็อกการดึงข้อมูล
               const [resGAS, resFB] = await Promise.all([
-                  fetch(GAS_API_URL + "?action=getDynamicData", { headers }),
-                  fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json", { headers })
+                  fetch(GAS_API_URL + "?action=getDynamicData&t=" + t),
+                  fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
               ]);
 
               const data = await resGAS.json();
               const fbData = await resFB.json();
 
-              // เช็คความเรียบร้อยก่อนประมวลผล
+              // เช็คค่าเพื่อป้องกัน Error
               if (!data.countedRawIds) data.countedRawIds = [];
               if (!data.countedDetailMap) data.countedDetailMap = {};
-              
+              if (!data.verifyListRaw) data.verifyListRaw = [];
+
               if (fbData) {
                   Object.values(fbData).forEach(q => {
-                      // เช็คว่ามี productId หรือยัง ถ้าไม่มีให้ข้าม (ป้องกัน Error ข้อมูลพัง)
                       if (!q || !q.productId) return;
 
                       let sum = (Number(q.front1)||0) + (Number(q.front2)||0) + (Number(q.front3)||0) + (Number(q.stock1)||0) + (Number(q.stock2)||0) + (Number(q.stock3)||0);
@@ -338,20 +322,23 @@
                       let fullData = { id: q.productId, name: q.productName, stock: q.currentStockRef, diff: diff, f1: q.front1, f2: q.front2, f3: q.front3, s1: q.stock1, s2: q.stock2, s3: q.stock3, employeeName: q.employeeName };
 
                       if (q.isVerify) {
-                          if (!data.verifyListRaw) data.verifyListRaw = [];
-                          data.verifyListRaw.push(fullData);
+                          let existingIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
+                          if (existingIdx > -1) data.verifyListRaw[existingIdx] = fullData; else data.verifyListRaw.push(fullData);
                       } else {
                           data.countedRawIds.push(q.productId);
                           data.countedDetailMap[q.productId] = fullData;
+                          
+                          let vIdx = data.verifyListRaw.findIndex(v => v.id === q.productId);
+                          if(vIdx > -1) data.verifyListRaw.splice(vIdx, 1);
                       }
                   });
               }
 
               processDynamicData(data, isFirstLogin);
           } catch(e) {
-              console.error("Error loading data:", e);
-              // ถ้า Error ให้ลองแสดงผลข้อมูลเก่าที่มีใน Cache ไปก่อน แทนที่จะโชว์ Error
-              Swal.fire({ title: 'แจ้งเตือน', text: 'ข้อมูลอาจจะอัปเดตไม่สมบูรณ์ (ลองกดรีเฟรชอีกครั้ง)', icon: 'warning', timer: 2000 });
+              console.error(e);
+              hideLoading(); 
+              Swal.fire('Error', 'ไม่สามารถอัปเดตข้อมูลล่าสุดได้', 'error');
           }
       }
       function switchTab(tab) {
