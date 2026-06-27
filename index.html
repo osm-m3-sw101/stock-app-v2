@@ -68,7 +68,6 @@
             <div class="d-flex align-items-center">
                 <span id="queueStatusBadge" class="badge rounded-pill bg-warning text-dark me-2 hidden" style="cursor:pointer;" onclick="syncBatchData()">รอส่ง: 0</span>
                 <button onclick="triggerAdminSync()" class="btn btn-sm btn-outline-success me-1" title="ดึงข้อมูลลงชีต"><i class="bi bi-cloud-arrow-down"></i></button>
-                <!-- แก้ปุ่มรีเฟรชตรงนี้เป็น forceSyncData() -->
                 <button onclick="forceSyncData()" class="btn btn-sm btn-outline-primary me-1" title="ดึงข้อมูลสต๊อกใหม่ทั้งหมด"><i class="bi bi-arrow-clockwise"></i></button>
                 <button onclick="logout()" class="btn btn-sm btn-outline-danger"><i class="bi bi-box-arrow-right"></i></button>
             </div>
@@ -209,13 +208,13 @@
       const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxyKcEp9I-lx5SsuEesQUH17jzO2WHeMYjaailFIdz3G1HHDIKvDMRyUiywIiZ-mrWQ/exec";
       
       const firebaseConfig = {
-      apiKey: "AIzaSyCXlWd...", // (ของคุณจะยาวกว่านี้ ก๊อปมาให้ครบนะครับ)
+      apiKey: "AIzaSyCXlWd...", 
       authDomain: "stockpro-88a22.firebaseapp.com",
       databaseURL: "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app",
       projectId: "stockpro-88a22",
       storageBucket: "stockpro-88a22.appspot.com",
       messagingSenderId: "148858273646",
-      appId: "1:148858273646:web:..." // (ของคุณจะยาวกว่านี้)
+      appId: "1:148858273646:web:..." 
     };
       if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
       const database = firebase.database();
@@ -235,11 +234,10 @@
       let offlineQueue = JSON.parse(localStorage.getItem('offlineQueue')) || [];
       let isSyncing = false; 
       const AUTO_SYNC_LIMIT = 50; 
-      const AUTO_SYNC_TIMER = 30000; // ตรวจสอบการส่งข้อมูลทุก 30 วินาที
+      const AUTO_SYNC_TIMER = 30000; 
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       
-      // เพิ่มฟังก์ชันสำหรับรีเซ็ตเวลา
       function resetIdleTimer() {
           localStorage.setItem('lastActiveTime', Date.now());
       }
@@ -265,7 +263,6 @@
             input.addEventListener('blur', () => { setTimeout(() => { const activeElement = document.activeElement; if (activeElement.tagName !== 'INPUT') { bottomNav.classList.remove('hidden'); document.body.style.paddingBottom = "90px"; } }, 100); });
         });
 
-        // เปิดระบบตรวจจับ 30 นาที
         localStorage.setItem('lastActiveTime', Date.now());
         document.body.addEventListener('touchstart', resetIdleTimer);
         document.body.addEventListener('click', resetIdleTimer);
@@ -281,7 +278,6 @@
         }, 300000); 
       };
 
-      // เพิ่มระบบเช็คเวลาตอนพับแล้วกลับมาเปิดแอป
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
             let lastActive = localStorage.getItem('lastActiveTime');
@@ -299,7 +295,6 @@
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
-      // เพิ่มฟังก์ชันล้างความจำและโหลดข้อมูลใหม่
       async function forceSyncData() {
           showLoading("อัปเดตฐานข้อมูลใหม่ทั้งหมด...");
           localStorage.removeItem('localStockData'); 
@@ -323,7 +318,6 @@
             await fetchDynamicData(isFirstLogin);
         } else {
             try {
-                // เพิ่ม &t=... ต่อท้าย URL เพื่อบังคับให้โหลดใหม่โดยไม่ติด CORS
                 const t = new Date().getTime();
                 const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t);
                 const data = await response.json();
@@ -332,7 +326,17 @@
                 allProducts = data.products || [];
                 localStorage.setItem('localStockData', JSON.stringify(allProducts));
                 
-                processDynamicData(data, isFirstLogin);
+                // ถอด processDynamicData ออกและกระจายตัวแปรแทน
+                if(data.countedRawIds) {
+                    rawCountedIds = data.countedRawIds || [];
+                    uniqueCountedIds = new Set(rawCountedIds);
+                    countedDetailMap = data.countedDetailMap || {};
+                    verifyListRaw = data.verifyListRaw || [];
+                    uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
+                }
+                
+                hideLoading();
+                if (lastActiveTab === 'dashboard') calculateDashboard();
             } catch (err) {
                 hideLoading();
                 Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
@@ -342,10 +346,8 @@
 
       async function fetchDynamicData(isFirstLogin) {
           try {
-              // ใช้ &t= ตัวเลขเวลาปัจจุบัน เพื่อหลอกเบราว์เซอร์ว่าเป็นลิงก์ใหม่ (กัน Cache)
               const t = new Date().getTime();
               
-              // ❌ ลบ { headers } ออกให้หมด เพื่อไม่ให้เบราว์เซอร์บล็อกการดึงข้อมูล
               const [resGAS, resFB] = await Promise.all([
                   fetch(GAS_API_URL + "?action=getDynamicData&t=" + t),
                   fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
@@ -354,7 +356,6 @@
               const data = await resGAS.json();
               const fbData = await resFB.json();
 
-              // เช็คค่าเพื่อป้องกัน Error
               if (!data.countedRawIds) data.countedRawIds = [];
               if (!data.countedDetailMap) data.countedDetailMap = {};
               if (!data.verifyListRaw) data.verifyListRaw = [];
@@ -380,7 +381,16 @@
                   });
               }
 
-              processDynamicData(data, isFirstLogin);
+              // ถอด processDynamicData ออกและกระจายตัวแปรแทน
+              rawCountedIds = data.countedRawIds || [];
+              uniqueCountedIds = new Set(rawCountedIds);
+              countedDetailMap = data.countedDetailMap || {};
+              verifyListRaw = data.verifyListRaw || [];
+              uniqueVerifyIds = new Set(verifyListRaw.map(v => v.id));
+              
+              hideLoading();
+              if (lastActiveTab === 'dashboard') calculateDashboard();
+              
           } catch(e) {
               console.error(e);
               hideLoading(); 
@@ -462,7 +472,6 @@
         syncBatchData();
       }
 
-      // 🔴 ส่งข้อมูลรวดเดียวเข้า Firebase
       async function syncBatchData() { 
           if (isSyncing || offlineQueue.length === 0) return; 
           isSyncing = true; updateQueueBadge(); 
