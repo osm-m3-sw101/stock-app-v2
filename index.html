@@ -68,7 +68,8 @@
             <div class="d-flex align-items-center">
                 <span id="queueStatusBadge" class="badge rounded-pill bg-warning text-dark me-2 hidden" style="cursor:pointer;" onclick="syncBatchData()">รอส่ง: 0</span>
                 <button onclick="triggerAdminSync()" class="btn btn-sm btn-outline-success me-1" title="ดึงข้อมูลลงชีต"><i class="bi bi-cloud-arrow-down"></i></button>
-                <button onclick="syncData(true)" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-arrow-clockwise"></i></button>
+                <!-- แก้ปุ่มรีเฟรชตรงนี้เป็น forceSyncData() -->
+                <button onclick="forceSyncData()" class="btn btn-sm btn-outline-primary me-1" title="ดึงข้อมูลสต๊อกใหม่ทั้งหมด"><i class="bi bi-arrow-clockwise"></i></button>
                 <button onclick="logout()" class="btn btn-sm btn-outline-danger"><i class="bi bi-box-arrow-right"></i></button>
             </div>
         </div>
@@ -238,6 +239,11 @@
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       
+      // เพิ่มฟังก์ชันสำหรับรีเซ็ตเวลา
+      function resetIdleTimer() {
+          localStorage.setItem('lastActiveTime', Date.now());
+      }
+
       window.onload = function() {
         const savedUser = localStorage.getItem('stockAppUser');
         if (savedUser) { document.getElementById('employeeName').value = savedUser; login(); } 
@@ -258,16 +264,56 @@
             input.addEventListener('focus', () => { bottomNav.classList.add('hidden'); document.body.style.paddingBottom = "10px"; });
             input.addEventListener('blur', () => { setTimeout(() => { const activeElement = document.activeElement; if (activeElement.tagName !== 'INPUT') { bottomNav.classList.remove('hidden'); document.body.style.paddingBottom = "90px"; } }, 100); });
         });
+
+        // เปิดระบบตรวจจับ 30 นาที
+        localStorage.setItem('lastActiveTime', Date.now());
+        document.body.addEventListener('touchstart', resetIdleTimer);
+        document.body.addEventListener('click', resetIdleTimer);
+        document.body.addEventListener('keypress', resetIdleTimer);
+        document.body.addEventListener('scroll', resetIdleTimer);
+
+        setInterval(() => {
+            let lastActive = localStorage.getItem('lastActiveTime');
+            if (lastActive && (Date.now() - lastActive > 1800000)) { 
+                console.log("ทิ้งเครื่องเกิน 30 นาที บังคับโหลดใหม่");
+                forceSyncData();
+            }
+        }, 300000); 
       };
 
+      // เพิ่มระบบเช็คเวลาตอนพับแล้วกลับมาเปิดแอป
       document.addEventListener("visibilitychange", function() {
-        if (document.visibilityState === 'hidden' && offlineQueue.length > 0) { syncBatchData(); }
+        if (document.visibilityState === 'visible') {
+            let lastActive = localStorage.getItem('lastActiveTime');
+            if (lastActive && (Date.now() - lastActive > 1800000)) {
+                console.log("กลับมาเปิดแอปหลังจากเกิน 30 นาที บังคับโหลดข้อมูลใหม่");
+                forceSyncData();
+            }
+        } else if (document.visibilityState === 'hidden' && offlineQueue.length > 0) { 
+            syncBatchData(); 
+        }
       });
 
       function login() { const name = (document.getElementById('employeeName').value || "").trim(); if(!name) return alert("กรุณาใส่ชื่อพนักงาน"); localStorage.setItem('stockAppUser', name); document.getElementById('displayName').innerText = name; document.getElementById('loginSection').classList.add('hidden'); document.getElementById('appSection').classList.remove('hidden'); syncData(true); }
       function logout() { Swal.fire({title:'ออกจากระบบ?',showCancelButton:true,confirmButtonText:'ตกลง'}).then((r)=>{if(r.isConfirmed){localStorage.removeItem('stockAppUser'); if(isScannerRunning) safeStopScanner(); document.getElementById('appSection').classList.add('hidden'); document.getElementById('loginSection').classList.remove('hidden'); document.getElementById('employeeName').value = '';}}); }
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
+
+      // เพิ่มฟังก์ชันล้างความจำและโหลดข้อมูลใหม่
+      async function forceSyncData() {
+          showLoading("อัปเดตฐานข้อมูลใหม่ทั้งหมด...");
+          localStorage.removeItem('localStockData'); 
+          localStorage.setItem('lastActiveTime', Date.now()); 
+          await syncData(false); 
+          Swal.fire({
+              toast: true, 
+              position: 'top-end', 
+              icon: 'success', 
+              title: 'ดึงข้อมูลล่าสุดเรียบร้อย', 
+              showConfirmButton: false, 
+              timer: 1500
+          });
+      }
 
       async function syncData(isFirstLogin) {
         showLoading("กำลังเชื่อมต่อข้อมูล...");
