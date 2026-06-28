@@ -598,29 +598,89 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-      // ดึงประวัติผ่าน API 
+      // ดึงประวัติผ่าน API + Firebase นำมารวมกัน
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
           try {
-              const res = await fetch(GAS_API_URL + "?action=getHistory");
-              const rows = await res.json();
+              const t = new Date().getTime();
+              // ดึงข้อมูล 2 แหล่งพร้อมกัน
+              const [resGAS, resFB] = await Promise.all([
+                  fetch(GAS_API_URL + "?action=getHistory&t=" + t),
+                  fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
+              ]);
+              
+              let rows = [];
+              if (resGAS.ok) {
+                  const gasData = await resGAS.json();
+                  if (Array.isArray(gasData)) rows = gasData; // ข้อมูลจากชีต
+              }
+              
+              if (resFB.ok) {
+                  const fbData = await resFB.json();
+                  if (fbData) {
+                      // เอาข้อมูลจาก Firebase มาแปลงให้อยู่ในรูปแบบเดียวกัน
+                      Object.values(fbData).forEach(item => {
+                          if (!item || !item.productId) return;
+                          const timeObj = new Date(item.timestamp || Date.now());
+                          const dd = String(timeObj.getDate()).padStart(2, '0');
+                          const mm = String(timeObj.getMonth() + 1).padStart(2, '0');
+                          const yyyy = timeObj.getFullYear();
+                          const HH = String(timeObj.getHours()).padStart(2, '0');
+                          const MM = String(timeObj.getMinutes()).padStart(2, '0');
+                          
+                          let sum = (Number(item.front1)||0) + (Number(item.front2)||0) + (Number(item.front3)||0) + (Number(item.stock1)||0) + (Number(item.stock2)||0) + (Number(item.stock3)||0);
+                          let diff = sum - (Number(item.currentStockRef)||0);
+                          
+                          rows.push({
+                              sheetRow: null, // ใส่เป็น null เพื่อให้รู้ว่ามาจาก Firebase (ยังไม่ลงชีต)
+                              id: item.productId,
+                              name: item.productName || "ไม่ทราบชื่อ",
+                              currentStock: item.currentStockRef || 0,
+                              f1: item.front1, f2: item.front2, f3: item.front3,
+                              s1: item.stock1, s2: item.stock2, s3: item.stock3,
+                              diff: diff,
+                              emp: item.employeeName || "ไม่ระบุ",
+                              dateGroup: `${dd}/${mm}/${yyyy}`,
+                              time: `${HH}:${MM}`,
+                              _ts: timeObj.getTime()
+                          });
+                      });
+                  }
+              }
+              
               list.innerHTML = ''; 
               if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
+              
+              // เรียงเวลาใหม่ทั้งหมด (เอาล่าสุดขึ้นก่อนเสมอ)
+              rows.sort((a, b) => b._ts - a._ts); 
+              
               const groups = {}; 
               rows.forEach(r => { const k = `${r.dateGroup}||${r.emp}`; if(!groups[k]) groups[k]=[]; groups[k].push(r); }); 
+              
               for (const key in groups) { 
                   const [d, e] = key.split('||'); const h = document.createElement('div'); h.className = 'group-header'; h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; list.appendChild(h); 
                   groups[key].forEach(r => { 
-                      const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); const div = document.createElement('div'); div.className = 'group-item'; div.onclick = function() { openFormFromHistory(r); }; 
-                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
+                      const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const fbBadge = r.sheetRow ? '' : ' <span class="badge bg-warning text-dark ms-1" style="font-size:0.7em">ยังไม่ซิงค์</span>';
+                      const div = document.createElement('div'); div.className = 'group-item'; div.onclick = function() { openFormFromHistory(r); }; 
+                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}${fbBadge}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
                       list.appendChild(div); 
                   }); 
               } 
-          } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; }
+          } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; console.error(e); }
       }
-
-      function openFormFromHistory(r) { editRowNumber = r.sheetRow; let found = allProducts.find(p => p.id === r.id); const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); document.getElementById('btnDelete').classList.remove('hidden'); }
+     function openFormFromHistory(r) { 
+          if (!r.sheetRow) {
+              Swal.fire('แจ้งเตือน', 'รายการนี้ยังไม่ซิงค์ลง Google Sheets หากต้องการแก้ไขจำนวน ให้ค้นหาหรือสแกนรหัสนี้ใหม่หน้าแรกได้เลยครับ', 'info');
+              return;
+          }
+          editRowNumber = r.sheetRow; 
+          let found = allProducts.find(p => p.id === r.id); 
+          const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; 
+          openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); 
+          document.getElementById('btnDelete').classList.remove('hidden'); 
+      }
       
       function saveSingleUpdate() { 
           const btn = document.getElementById('btnSave'); btn.disabled = true; showLoading(); 
