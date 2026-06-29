@@ -204,18 +204,19 @@
     </div>
 
     <script>
-      // 🔴🔴🔴 นำ URL ใหม่ของคุณมาใส่ตรงนี้ 🔴🔴🔴
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxZWlKlu-ptxVeV_15bRGg7c7keVljE6P4jsuV9lI3XZh7cKu11fOTpPpc203_x7Ka5/exec";
+      // 🔴🔴🔴 URL API ของ Google Sheets (ห้ามเปลี่ยนถ้าไม่จำเป็น)
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxuCJ5WMA21hiY4iM5JhqtqXJeiU5JX291fMSFqTfq14iev4lk_kNS0apO5Ba7BF-fd/exec";
       
       const firebaseConfig = {
-     apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
-     authDomain: "stockpro-88a22.firebaseapp.com",
-     databaseURL: "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app",
-     projectId: "stockpro-88a22",
-     storageBucket: "stockpro-88a22.appspot.com",
-     messagingSenderId: "639970498236",
-     appId: "1:639970498236:web:531270850a544a1e10a2b9"
-   };
+        apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
+        authDomain: "stockpro-88a22.firebaseapp.com",
+        databaseURL: "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "stockpro-88a22",
+        storageBucket: "stockpro-88a22.appspot.com",
+        messagingSenderId: "639970498236",
+        appId: "1:639970498236:web:531270850a544a1e10a2b9"
+      };
+      
       if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
       const database = firebase.database();
 
@@ -238,11 +239,9 @@
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       
-      // ฟังก์ชันรีเซ็ตเวลา
       function resetIdleTimer() { localStorage.setItem('lastActiveTime', Date.now()); }
 
       window.onload = function() {
-        // [ตรวจสอบการ Reload / ดึงจอลงมา]
         if (window.performance) {
             const navEntries = window.performance.getEntriesByType("navigation");
             if (navEntries.length > 0 && navEntries[0].type === "reload") {
@@ -264,7 +263,6 @@
         updateQueueBadge();
         setInterval(() => { if(offlineQueue.length > 0) syncBatchData(); }, AUTO_SYNC_TIMER);
         
-        // ผูก Event รีเซ็ตเวลาทิ้งเครื่อง
         localStorage.setItem('lastActiveTime', Date.now());
         document.body.addEventListener('touchstart', resetIdleTimer);
         document.body.addEventListener('click', resetIdleTimer);
@@ -272,7 +270,7 @@
         
         setInterval(() => {
             let lastActive = localStorage.getItem('lastActiveTime');
-            if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); } // ทิ้งเกิน 30 นาที บังคับโหลดใหม่
+            if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); } 
         }, 300000);
       };
 
@@ -308,7 +306,8 @@
         } else {
             try {
                 const t = new Date().getTime();
-                const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t);
+                // เพิ่ม redirect: 'follow' เพื่อป้องกันปัญหามือถือบล็อกการเปลี่ยนเส้นทางของ Google
+                const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow" });
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
@@ -337,7 +336,7 @@
                 else if(lastActiveTab === 'dashboard') calculateDashboard();
 
             } catch (err) {
-                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่', 'error');
             }
         }
       }
@@ -345,7 +344,8 @@
       async function fetchDynamicData(isFirstLogin) {
           try {
               const t = new Date().getTime();
-              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t);
+              // เพิ่ม redirect: 'follow' 
+              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow" });
               const data = await response.json();
               if (data.error) throw new Error(data.error);
 
@@ -397,7 +397,8 @@
                 offlineQueue.splice(qIdx, 1); 
             } else if (vIdx > -1) {
                 existingRecord = verifyListRaw[vIdx];
-                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id)); 
+                // เพิ่ม redirect: 'follow'
+                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }); 
             }
 
             if (existingRecord) {
@@ -434,7 +435,8 @@
              countedDetailMap[data.productId] = fullData;
              if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
                  uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
-                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId));
+                 // เพิ่ม redirect: 'follow'
+                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
                  offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
                  localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
              }
@@ -443,7 +445,7 @@
         const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกแล้ว';
         const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
         Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
-        if (offlineQueue.length >= AUTO_SYNC_LIMIT) syncBatchData(); else syncBatchData(); // สั่งส่งทันทีผ่าน API
+        if (offlineQueue.length >= AUTO_SYNC_LIMIT) syncBatchData(); else syncBatchData(); 
       }
 
       async function syncBatchData() { 
@@ -573,8 +575,14 @@
           
           if (mode === 'sheet') { 
               showLoading("กำลังบันทึก..."); 
-              fetch(GAS_API_URL + "?action=saveReport&reportType=" + encodeURIComponent(typeText) + "&filterType=" + encodeURIComponent(filterInfo.type) + "&filterValue=" + encodeURIComponent(filterInfo.value), {
-                  method: 'POST', body: JSON.stringify(list)
+              // เปลี่ยนส่งข้อมูลแบบ text/plain เพื่อป้องกัน CORS Block
+              fetch(GAS_API_URL + "?action=saveReport", {
+                  method: 'POST', 
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  redirect: "follow",
+                  body: JSON.stringify({
+                      reportType: typeText, filterType: filterInfo.type, filterValue: filterInfo.value, items: list
+                  })
               }).then(r => r.json()).then(r => { 
                   hideLoading(); if(r.success) Swal.fire('สำเร็จ', `บันทึกลงชีต "${r.sheetName}" แล้ว`, 'success'); else Swal.fire('Error', r.error, 'error'); 
               }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); });
@@ -598,28 +606,26 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-      // ดึงประวัติผ่าน API + Firebase นำมารวมกัน
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
           try {
               const t = new Date().getTime();
-              // ดึงข้อมูล 2 แหล่งพร้อมกัน
+              // เพิ่ม redirect: 'follow'
               const [resGAS, resFB] = await Promise.all([
-                  fetch(GAS_API_URL + "?action=getHistory&t=" + t),
+                  fetch(GAS_API_URL + "?action=getHistory&t=" + t, { redirect: "follow" }),
                   fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
               ]);
               
               let rows = [];
               if (resGAS.ok) {
                   const gasData = await resGAS.json();
-                  if (Array.isArray(gasData)) rows = gasData; // ข้อมูลจากชีต
+                  if (Array.isArray(gasData)) rows = gasData; 
               }
               
               if (resFB.ok) {
                   const fbData = await resFB.json();
                   if (fbData) {
-                      // เอาข้อมูลจาก Firebase มาแปลงให้อยู่ในรูปแบบเดียวกัน
                       Object.values(fbData).forEach(item => {
                           if (!item || !item.productId) return;
                           const timeObj = new Date(item.timestamp || Date.now());
@@ -633,7 +639,7 @@
                           let diff = sum - (Number(item.currentStockRef)||0);
                           
                           rows.push({
-                              sheetRow: null, // ใส่เป็น null เพื่อให้รู้ว่ามาจาก Firebase (ยังไม่ลงชีต)
+                              sheetRow: null, 
                               id: item.productId,
                               name: item.productName || "ไม่ทราบชื่อ",
                               currentStock: item.currentStockRef || 0,
@@ -652,7 +658,6 @@
               list.innerHTML = ''; 
               if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
               
-              // เรียงเวลาใหม่ทั้งหมด (เอาล่าสุดขึ้นก่อนเสมอ)
               rows.sort((a, b) => b._ts - a._ts); 
               
               const groups = {}; 
@@ -670,7 +675,8 @@
               } 
           } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; console.error(e); }
       }
-     function openFormFromHistory(r) { 
+
+      function openFormFromHistory(r) { 
           if (!r.sheetRow) {
               Swal.fire('แจ้งเตือน', 'รายการนี้ยังไม่ซิงค์ลง Google Sheets หากต้องการแก้ไขจำนวน ให้ค้นหาหรือสแกนรหัสนี้ใหม่หน้าแรกได้เลยครับ', 'info');
               return;
@@ -685,7 +691,16 @@
       function saveSingleUpdate() { 
           const btn = document.getElementById('btnSave'); btn.disabled = true; showLoading(); 
           const data = { productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, front1: document.getElementById('f1').value, front2: document.getElementById('f2').value, front3: document.getElementById('f3').value, stock1: document.getElementById('s1').value, stock2: document.getElementById('s2').value, stock3: document.getElementById('s3').value, employeeName: localStorage.getItem('stockAppUser') }; 
-          fetch(GAS_API_URL + "?action=updateHistory", { method: 'POST', body: JSON.stringify({ rowNumber: editRowNumber, data: data }) }).then(r => r.json()).then(() => { hideLoading(); btn.disabled = false; editRowNumber = null; switchTab('history'); }).catch(e => { hideLoading(); btn.disabled = false; Swal.fire('Error', e.message, 'error'); }); 
+          
+          // เปลี่ยนส่งข้อมูลแบบ text/plain
+          fetch(GAS_API_URL + "?action=updateHistory", { 
+              method: 'POST', 
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              redirect: "follow",
+              body: JSON.stringify({ rowNumber: editRowNumber, data: data }) 
+          }).then(r => r.json()).then(() => { 
+              hideLoading(); btn.disabled = false; editRowNumber = null; switchTab('history'); 
+          }).catch(e => { hideLoading(); btn.disabled = false; Swal.fire('Error', e.message, 'error'); }); 
       }
       
       function deleteCurrentHistory() { 
@@ -693,7 +708,13 @@
           Swal.fire({ title: 'ลบรายการนี้?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { 
               if(result.isConfirmed) { 
                   showLoading("ลบ..."); 
-                  fetch(GAS_API_URL + "?action=deleteHistory", { method: 'POST', body: JSON.stringify({ rowNumber: editRowNumber }) }).then(r => r.json()).then(() => { 
+                  // เปลี่ยนส่งข้อมูลแบบ text/plain
+                  fetch(GAS_API_URL + "?action=deleteHistory", { 
+                      method: 'POST', 
+                      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                      redirect: "follow",
+                      body: JSON.stringify({ rowNumber: editRowNumber }) 
+                  }).then(r => r.json()).then(() => { 
                       const index = rawCountedIds.indexOf(currentProduct.id); if (index > -1) rawCountedIds.splice(index, 1); 
                       if (!rawCountedIds.includes(currentProduct.id)) uniqueCountedIds.delete(currentProduct.id); 
                       hideLoading(); editRowNumber = null; loadHistory(); switchTab('history'); 
@@ -702,13 +723,13 @@
           }); 
       }
 
-      // กดซิงค์ Firebase -> Sheets
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
                   showLoading("กำลังซิงค์ลงชีต...");
                   try {
-                      const response = await fetch(GAS_API_URL + "?action=syncAdmin");
+                      // เพิ่ม redirect: 'follow'
+                      const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow" });
                       const resData = await response.json();
                       hideLoading(); Swal.fire('สำเร็จ', resData.message || 'เรียบร้อย', 'success'); loadHistory(); 
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
@@ -719,12 +740,12 @@
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) initCamera(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       
-      // ผูกบาร์โค้ดผ่าน API
       function confirmLinkBarcode(product) { 
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then((result) => { 
               if (result.isConfirmed) { 
                   showLoading("บันทึก..."); 
-                  fetch(GAS_API_URL + "?action=appendBarcode&targetMainId=" + encodeURIComponent(product.id) + "&newBarcode=" + encodeURIComponent(pendingBarcode)).then(r => r.json()).then(res => { 
+                  // เพิ่ม redirect: 'follow'
+                  fetch(GAS_API_URL + "?action=appendBarcode&targetMainId=" + encodeURIComponent(product.id) + "&newBarcode=" + encodeURIComponent(pendingBarcode), { redirect: "follow" }).then(r => r.json()).then(res => { 
                       hideLoading(); if(res.error) throw new Error(res.error);
                       isScanProcessing=false; isLinkMode=false; safeStopScanner(); const savedCode = pendingBarcode; pendingBarcode=""; 
                       document.getElementById('linkModeBar').classList.add('hidden'); document.getElementById('searchInput').value = ''; 
@@ -739,3 +760,4 @@
     </script>
   </body>
 </html>
+```eof
