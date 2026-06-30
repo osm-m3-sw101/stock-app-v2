@@ -348,7 +348,7 @@
                 else if(lastActiveTab === 'dashboard') calculateDashboard();
 
             } catch (err) {
-                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่', 'error');
+                hideLoading(); Swal.fire('Error', err.message, 'error'); console.error(err);
             }
         }
       }
