@@ -614,36 +614,35 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-     async function loadHistory() { 
+    async function loadHistory() { 
     const list = document.getElementById('historyList'); 
     list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
     try {
         const t = new Date().getTime();
-        // เรียกใช้ฟังก์ชันเดียวจาก GAS ที่เราแก้ให้ดึงรวมกันและแปลงเวลาให้เสร็จแล้ว
         const resGAS = await fetch(GAS_API_URL + "?action=getHistory&t=" + t, { redirect: "follow" });
-        
-        let rows = [];
-        if (resGAS.ok) {
-            rows = await resGAS.json(); // ข้อมูลที่ส่งมานี้จะครบทั้ง Sheets + Firebase และมีเวลาที่ถูกต้องแล้ว
-        }
+        const rows = await resGAS.json();
         
         list.innerHTML = ''; 
         if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
         
-        // กลุ่มข้อมูลตาม dateGroup ที่ส่งมาจากหลังบ้าน (dd/MM)
         const groups = {}; 
         rows.forEach(r => { 
-            const k = `${r.dateGroup}||${r.emp}`; 
-            if(!groups[k]) groups[k]=[]; 
+            // r.dateGroup ตรงนี้มาจาก GAS คือ '30/06'
+            // เราใช้ค่านี้เป็น Key เลย ห้ามผ่าน function แปลงวันอีก
+            const k = r.dateGroup + "||" + r.emp; 
+            if(!groups[k]) groups[k] = []; 
             groups[k].push(r); 
         }); 
         
         for (const key in groups) { 
-            const [d, e] = key.split('||'); 
+            const parts = key.split('||');
+            const dateStr = parts[0]; // คือ 30/06
+            const empName = parts[1];
+            
             const h = document.createElement('div'); 
             h.className = 'group-header'; 
-            // d คือวันที่ที่ส่งมาจากหลังบ้าน เช่น 30/06
-            h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; 
+            // โชว์ค่า dateStr ตรงๆ แบบไม่มีการแปลงเป็นชื่อวัน
+            h.innerHTML = `<span>${dateStr} - ${empName}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; 
             list.appendChild(h); 
             
             groups[key].forEach(r => { 
@@ -658,10 +657,8 @@
         } 
     } catch(e) { 
         list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; 
-        console.error(e); 
     }
 }
-
       function openFormFromHistory(r) { 
           if (!r.sheetRow) {
               Swal.fire('แจ้งเตือน', 'รายการนี้ยังไม่ซิงค์ลง Google Sheets หากต้องการแก้ไขจำนวน ให้ค้นหาหรือสแกนรหัสนี้ใหม่หน้าแรกได้เลยครับ', 'info');
