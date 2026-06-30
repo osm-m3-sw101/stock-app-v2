@@ -16,6 +16,7 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
 
     <style>
       body { padding: 6px; background-color: #f4f6f9; font-family: 'Sarabun', sans-serif; padding-bottom: 90px; }
@@ -160,7 +161,7 @@
             <div class="card p-3 mb-3 bg-light border-0">
                 <div class="row g-2">
                     <div class="col-4"><select id="filterType" class="form-select form-select-sm" onchange="populateFilterValues()"><option value="dept">แผนก</option><option value="subCode">รหัสซับ</option></select></div>
-                    <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="filterDropdownOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
+                    <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="debouncedFilterOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
                     <div class="col-12"><select id="selFilterValue" class="form-select" onchange="calculateDashboard()"><option value="">-- เลือกรายการ --</option></select></div>
                 </div>
             </div>
@@ -204,8 +205,20 @@
     </div>
 
     <script>
+      // ฟังก์ชันหน่วงเวลา (Debounce)
+      function debounce(func, delay) {
+        let timeoutId;
+        return function(...args) {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            func.apply(this, args);
+          }, delay);
+        };
+      }
+      const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
+
       // 🔴🔴🔴 URL API ของ Google Sheets (ห้ามเปลี่ยนถ้าไม่จำเป็น)
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxuCJ5WMA21hiY4iM5JhqtqXJeiU5JX291fMSFqTfq14iev4lk_kNS0apO5Ba7BF-fd/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOy_7D93dvgHQQEtlo2BX0GuNwUSx4ENy6bkI_Q0Nsobpql2vKPUL2IxpmXHQuuQPQ/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -246,7 +259,7 @@
             const navEntries = window.performance.getEntriesByType("navigation");
             if (navEntries.length > 0 && navEntries[0].type === "reload") {
                 console.log("ตั้งใจรีเฟรช / ล้างข้อมูลเก่า");
-                localStorage.removeItem('localStockData');
+                localforage.removeItem('localStockData'); // เปลี่ยนมาใช้ localforage
             }
         }
 
@@ -290,7 +303,7 @@
 
       async function forceSyncData() {
           showLoading("อัปเดตฐานข้อมูลใหม่ทั้งหมด...");
-          localStorage.removeItem('localStockData'); 
+          await localforage.removeItem('localStockData'); // เปลี่ยนมาใช้ localforage
           localStorage.setItem('lastActiveTime', Date.now()); 
           await syncData(false); 
           Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ดึงข้อมูลล่าสุดเรียบร้อย', showConfirmButton: false, timer: 1500 });
@@ -298,21 +311,20 @@
 
       async function syncData(isFirstLogin) {
         showLoading("โหลดสต๊อก & ตรวจสอบ...");
-        const cachedProducts = localStorage.getItem('localStockData');
+        const cachedProducts = await localforage.getItem('localStockData'); // เปลี่ยนมาใช้ localforage
         
         if (cachedProducts) {
-            allProducts = JSON.parse(cachedProducts);
+            allProducts = typeof cachedProducts === 'string' ? JSON.parse(cachedProducts) : cachedProducts;
             await fetchDynamicData(isFirstLogin);
         } else {
             try {
                 const t = new Date().getTime();
-                // เพิ่ม redirect: 'follow' เพื่อป้องกันปัญหามือถือบล็อกการเปลี่ยนเส้นทางของ Google
                 const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow" });
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
                 allProducts = data.products || [];
-                localStorage.setItem('localStockData', JSON.stringify(allProducts));
+                await localforage.setItem('localStockData', allProducts); // เปลี่ยนมาใช้ localforage
                 
                 rawCountedIds = data.countedRawIds || [];
                 countedDetailMap = data.countedDetailMap || {}; 
@@ -344,7 +356,6 @@
       async function fetchDynamicData(isFirstLogin) {
           try {
               const t = new Date().getTime();
-              // เพิ่ม redirect: 'follow' 
               const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow" });
               const data = await response.json();
               if (data.error) throw new Error(data.error);
@@ -397,7 +408,6 @@
                 offlineQueue.splice(qIdx, 1); 
             } else if (vIdx > -1) {
                 existingRecord = verifyListRaw[vIdx];
-                // เพิ่ม redirect: 'follow'
                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }); 
             }
 
@@ -435,7 +445,6 @@
              countedDetailMap[data.productId] = fullData;
              if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
                  uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
-                 // เพิ่ม redirect: 'follow'
                  fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
                  offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
                  localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
@@ -575,7 +584,6 @@
           
           if (mode === 'sheet') { 
               showLoading("กำลังบันทึก..."); 
-              // เปลี่ยนส่งข้อมูลแบบ text/plain เพื่อป้องกัน CORS Block
               fetch(GAS_API_URL + "?action=saveReport", {
                   method: 'POST', 
                   headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -611,7 +619,6 @@
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
           try {
               const t = new Date().getTime();
-              // เพิ่ม redirect: 'follow'
               const [resGAS, resFB] = await Promise.all([
                   fetch(GAS_API_URL + "?action=getHistory&t=" + t, { redirect: "follow" }),
                   fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
@@ -692,7 +699,6 @@
           const btn = document.getElementById('btnSave'); btn.disabled = true; showLoading(); 
           const data = { productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, front1: document.getElementById('f1').value, front2: document.getElementById('f2').value, front3: document.getElementById('f3').value, stock1: document.getElementById('s1').value, stock2: document.getElementById('s2').value, stock3: document.getElementById('s3').value, employeeName: localStorage.getItem('stockAppUser') }; 
           
-          // เปลี่ยนส่งข้อมูลแบบ text/plain
           fetch(GAS_API_URL + "?action=updateHistory", { 
               method: 'POST', 
               headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -708,7 +714,6 @@
           Swal.fire({ title: 'ลบรายการนี้?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { 
               if(result.isConfirmed) { 
                   showLoading("ลบ..."); 
-                  // เปลี่ยนส่งข้อมูลแบบ text/plain
                   fetch(GAS_API_URL + "?action=deleteHistory", { 
                       method: 'POST', 
                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -728,7 +733,6 @@
               if (result.isConfirmed) {
                   showLoading("กำลังซิงค์ลงชีต...");
                   try {
-                      // เพิ่ม redirect: 'follow'
                       const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow" });
                       const resData = await response.json();
                       hideLoading(); Swal.fire('สำเร็จ', resData.message || 'เรียบร้อย', 'success'); loadHistory(); 
@@ -744,7 +748,6 @@
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then((result) => { 
               if (result.isConfirmed) { 
                   showLoading("บันทึก..."); 
-                  // เพิ่ม redirect: 'follow'
                   fetch(GAS_API_URL + "?action=appendBarcode&targetMainId=" + encodeURIComponent(product.id) + "&newBarcode=" + encodeURIComponent(pendingBarcode), { redirect: "follow" }).then(r => r.json()).then(res => { 
                       hideLoading(); if(res.error) throw new Error(res.error);
                       isScanProcessing=false; isLinkMode=false; safeStopScanner(); const savedCode = pendingBarcode; pendingBarcode=""; 
@@ -760,4 +763,3 @@
     </script>
   </body>
 </html>
-```eof
