@@ -614,74 +614,53 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-      async function loadHistory() { 
-          const list = document.getElementById('historyList'); 
-          list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
-          try {
-              const t = new Date().getTime();
-              const [resGAS, resFB] = await Promise.all([
-                  fetch(GAS_API_URL + "?action=getHistory&t=" + t, { redirect: "follow" }),
-                  fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json?t=" + t)
-              ]);
-              
-              let rows = [];
-              if (resGAS.ok) {
-                  const gasData = await resGAS.json();
-                  if (Array.isArray(gasData)) rows = gasData; 
-              }
-              
-              if (resFB.ok) {
-                  const fbData = await resFB.json();
-                  if (fbData) {
-                      Object.values(fbData).forEach(item => {
-                          if (!item || !item.productId) return;
-                          const timeObj = new Date(item.timestamp || Date.now());
-                          const dd = String(timeObj.getDate()).padStart(2, '0');
-                          const mm = String(timeObj.getMonth() + 1).padStart(2, '0');
-                          // บรรทัดที่ 641-643 (ลบการกำหนด const yyyy, HH, MM เดิมออก แล้วใช้ชุดนี้แทน)
-const options = { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false };
-const formatter = new Intl.DateTimeFormat('th-TH', options);
-const parts = formatter.formatToParts(timeObj);
-const map = {}; parts.forEach(p => map[p.type] = p.value);
-
-let sum = (Number(item.front1)||0) + (Number(item.front2)||0) + (Number(item.front3)||0) + (Number(item.stock1)||0) + (Number(item.stock2)||0) + (Number(item.stock3)||0);
-let diff = sum - (Number(item.currentStockRef)||0);
-
-// ใน index.html ภายใน function loadHistory()
-// ตรงส่วนที่วนลูป fbData ให้แก้เป็นดึงค่าจาก item.dateGroup และ item.time ที่ส่งมาจาก Code.gs ได้เลย
-rows.push({
-    sheetRow: null, 
-    id: item.id,
-    name: item.name,
-    // ... ค่าอื่นๆ ...
-    dateGroup: item.dateGroup, // ดึงค่าที่แปลงมาจาก Code.gs แล้ว
-    time: item.time,           // ดึงค่าที่แปลงมาจาก Code.gs แล้ว
-    _ts: item._ts
-});
-                      });
-                  }
-              }
-              
-              list.innerHTML = ''; 
-              if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
-              
-              rows.sort((a, b) => b._ts - a._ts); 
-              
-              const groups = {}; 
-              rows.forEach(r => { const k = `${r.dateGroup}||${r.emp}`; if(!groups[k]) groups[k]=[]; groups[k].push(r); }); 
-              
-              for (const key in groups) { 
-                  const [d, e] = key.split('||'); const h = document.createElement('div'); h.className = 'group-header'; h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; list.appendChild(h); 
-                  groups[key].forEach(r => { 
-                      const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); 
-                      const fbBadge = r.sheetRow ? '' : ' <span class="badge bg-warning text-dark ms-1" style="font-size:0.7em">ยังไม่ซิงค์</span>';
-                      const div = document.createElement('div'); div.className = 'group-item'; div.onclick = function() { openFormFromHistory(r); }; 
-                      div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}${fbBadge}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
-                      list.appendChild(div); 
-                  }); 
-              } 
-          } catch(e) { list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; console.error(e); }
-      }
+     async function loadHistory() { 
+    const list = document.getElementById('historyList'); 
+    list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
+    try {
+        const t = new Date().getTime();
+        // เรียกใช้ฟังก์ชันเดียวจาก GAS ที่เราแก้ให้ดึงรวมกันและแปลงเวลาให้เสร็จแล้ว
+        const resGAS = await fetch(GAS_API_URL + "?action=getHistory&t=" + t, { redirect: "follow" });
+        
+        let rows = [];
+        if (resGAS.ok) {
+            rows = await resGAS.json(); // ข้อมูลที่ส่งมานี้จะครบทั้ง Sheets + Firebase และมีเวลาที่ถูกต้องแล้ว
+        }
+        
+        list.innerHTML = ''; 
+        if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
+        
+        // กลุ่มข้อมูลตาม dateGroup ที่ส่งมาจากหลังบ้าน (dd/MM)
+        const groups = {}; 
+        rows.forEach(r => { 
+            const k = `${r.dateGroup}||${r.emp}`; 
+            if(!groups[k]) groups[k]=[]; 
+            groups[k].push(r); 
+        }); 
+        
+        for (const key in groups) { 
+            const [d, e] = key.split('||'); 
+            const h = document.createElement('div'); 
+            h.className = 'group-header'; 
+            // d คือวันที่ที่ส่งมาจากหลังบ้าน เช่น 30/06
+            h.innerHTML = `<span>${d} - ${e}</span> <span class="badge bg-primary rounded-pill">${groups[key].length}</span>`; 
+            list.appendChild(h); 
+            
+            groups[key].forEach(r => { 
+                const c = r.diff < 0 ? 'text-danger' : (r.diff > 0 ? 'text-success' : 'text-primary'); 
+                const fbBadge = r.sheetRow ? '' : ' <span class="badge bg-warning text-dark ms-1" style="font-size:0.7em">ยังไม่ซิงค์</span>';
+                const div = document.createElement('div'); 
+                div.className = 'group-item'; 
+                div.onclick = function() { openFormFromHistory(r); }; 
+                div.innerHTML = `<div class="d-flex justify-content-between"><div class="text-truncate fw-bold" style="max-width:70%">${r.name}${fbBadge}</div><small class="text-muted">${r.time}</small></div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${r.id}</small><span class="${c} fw-bold">ผลต่าง: ${r.diff>0?'+'+r.diff:r.diff}</span></div>`; 
+                list.appendChild(div); 
+            }); 
+        } 
+    } catch(e) { 
+        list.innerHTML = '<div class="text-center text-danger mt-3">โหลดข้อมูลล้มเหลว</div>'; 
+        console.error(e); 
+    }
+}
 
       function openFormFromHistory(r) { 
           if (!r.sheetRow) {
