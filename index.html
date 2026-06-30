@@ -645,22 +645,28 @@
                           let sum = (Number(item.front1)||0) + (Number(item.front2)||0) + (Number(item.front3)||0) + (Number(item.stock1)||0) + (Number(item.stock2)||0) + (Number(item.stock3)||0);
                           let diff = sum - (Number(item.currentStockRef)||0);
                           
-                          rows.push({
-                              sheetRow: null, 
-                              id: item.productId,
-                              name: item.productName || "ไม่ทราบชื่อ",
-                              currentStock: item.currentStockRef || 0,
-                              f1: item.front1, f2: item.front2, f3: item.front3,
-                              s1: item.stock1, s2: item.stock2, s3: item.stock3,
-                              diff: diff,
-                              emp: item.employeeName || "ไม่ระบุ",
-                              dateGroup: `${dd}/${mm}/${yyyy}`,
-                              time: `${HH}:${MM}`,
-                              _ts: timeObj.getTime()
-                          });
-                      });
-                  }
-              }
+                          // บรรทัดที่ 641-643 (ลบการกำหนด const yyyy, HH, MM เดิมออก แล้วใช้ชุดนี้แทน)
+const options = { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false };
+const formatter = new Intl.DateTimeFormat('th-TH', options);
+const parts = formatter.formatToParts(timeObj);
+const map = {}; parts.forEach(p => map[p.type] = p.value);
+
+let sum = (Number(item.front1)||0) + (Number(item.front2)||0) + (Number(item.front3)||0) + (Number(item.stock1)||0) + (Number(item.stock2)||0) + (Number(item.stock3)||0);
+let diff = sum - (Number(item.currentStockRef)||0);
+
+rows.push({
+    sheetRow: null, 
+    id: item.productId,
+    name: item.productName || "ไม่ทราบชื่อ",
+    currentStock: item.currentStockRef || 0,
+    f1: item.front1, f2: item.front2, f3: item.front3,
+    s1: item.stock1, s2: item.stock2, s3: item.stock3,
+    diff: diff,
+    emp: item.employeeName || "ไม่ระบุ",
+    dateGroup: `${map.day}/${map.month}/${map.year}`,
+    time: `${map.hour}:${map.minute}`,
+    _ts: timeObj.getTime()
+});
               
               list.innerHTML = ''; 
               if(!rows || rows.length === 0) { list.innerHTML = '<div class="text-center text-muted mt-3">ไม่มีรายการ</div>'; return; } 
