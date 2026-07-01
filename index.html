@@ -205,7 +205,6 @@
     </div>
 
     <script>
-      // ฟังก์ชันหน่วงเวลา (Debounce)
       function debounce(func, delay) {
         let timeoutId;
         return function(...args) {
@@ -215,7 +214,6 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      // 🔴🔴🔴 URL API ของ Google Sheets 
       const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOy_7D93dvgHQQEtlo2BX0GuNwUSx4ENy6bkI_Q0Nsobpql2vKPUL2IxpmXHQuuQPQ/exec";
       
       const firebaseConfig = {
@@ -237,7 +235,7 @@
       let savedFilterType = 'dept';
       let savedFilterValue = '';
 
-      let currentFacingMode = "environment"; // เปลี่ยนมาใช้วิธีบังคับโหมดกล้องที่เสถียรกว่าสำหรับ iPhone
+      let currentFacingMode = "environment"; 
       let html5QrcodeScannerObj = null;
       let dashListLeft = [], dashListDone = [], dashListVerify = [], allFilterOptionsData = [];
       let offlineQueue = JSON.parse(localStorage.getItem('offlineQueue')) || [];
@@ -279,6 +277,10 @@
             if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); } 
         }, 300000);
       };
+
+      document.getElementById('appSection').addEventListener('click', function() {
+         resetIdleTimer();
+      });
 
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
@@ -382,14 +384,36 @@
         document.getElementById('viewHome').classList.add('hidden'); document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewHistory').classList.add('hidden'); document.getElementById('viewDashboard').classList.add('hidden');
         document.getElementById('navScan').classList.remove('active'); document.getElementById('navHistory').classList.remove('active'); document.getElementById('navDashboard').classList.remove('active');
         if (tab === 'scan' || tab === 'dashboard' || tab === 'history') { lastActiveTab = tab; }
-        if(tab === 'scan') { document.getElementById('viewHome').classList.remove('hidden'); document.getElementById('navScan').classList.add('active'); if(!document.getElementById('searchInput').value) setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 500); } else if (tab === 'dashboard') { safeStopScanner(); document.getElementById('viewDashboard').classList.remove('hidden'); document.getElementById('navDashboard').classList.add('active'); if(savedFilterType) document.getElementById('filterType').value = savedFilterType; populateFilterValues(); if(savedFilterValue) { const select = document.getElementById('selFilterValue'); let exists = false; for (let i = 0; i < select.options.length; i++) { if (select.options[i].value === savedFilterValue) { exists = true; break; } } if(exists) { select.value = savedFilterValue; calculateDashboard(); } } } else { safeStopScanner(); document.getElementById('viewHistory').classList.remove('hidden'); document.getElementById('navHistory').classList.add('active'); loadHistory(); }
+        if(tab === 'scan') { 
+            document.getElementById('viewHome').classList.remove('hidden'); 
+            document.getElementById('navScan').classList.add('active'); 
+            if(!document.getElementById('searchInput').value) {
+                setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 800); 
+            }
+        } else if (tab === 'dashboard') { 
+            safeStopScanner(); document.getElementById('viewDashboard').classList.remove('hidden'); document.getElementById('navDashboard').classList.add('active'); 
+            if(savedFilterType) document.getElementById('filterType').value = savedFilterType; 
+            populateFilterValues(); 
+            if(savedFilterValue) { 
+                const select = document.getElementById('selFilterValue'); 
+                let exists = false; 
+                for (let i = 0; i < select.options.length; i++) { if (select.options[i].value === savedFilterValue) { exists = true; break; } } 
+                if(exists) { select.value = savedFilterValue; calculateDashboard(); } 
+            } 
+        } else { 
+            safeStopScanner(); document.getElementById('viewHistory').classList.remove('hidden'); document.getElementById('navHistory').classList.add('active'); loadHistory(); 
+        }
       }
 
       function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
-        let nf1 = Number(document.getElementById('f1').value) || ""; let nf2 = Number(document.getElementById('f2').value) || ""; let nf3 = Number(document.getElementById('f3').value) || "";
-        let ns1 = Number(document.getElementById('s1').value) || ""; let ns2 = Number(document.getElementById('s2').value) || ""; let ns3 = Number(document.getElementById('s3').value) || "";
+        let nf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
+        let nf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
+        let nf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
+        let ns1 = document.getElementById('s1').value === "" ? "" : Number(document.getElementById('s1').value); 
+        let ns2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
+        let ns3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
 
         if (isVerifyMode && !isFixingVerify) {
             let existingRecord = null;
@@ -508,10 +532,31 @@
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
       }
       
-      function cancelForm() { isFixingVerify = false; safeStopScanner(); if (editRowNumber) { editRowNumber = null; switchTab('history'); } else { editRowNumber = null; if (lastActiveTab === 'dashboard') { switchTab('dashboard'); } else if (lastActiveTab === 'history') { switchTab('history'); } else { switchTab('scan'); resetSearch(); } } }
-      function resetSearch() { document.getElementById('searchInput').value = ''; document.getElementById('searchInput').placeholder = isLinkMode ? 'สแกนรหัสเดิม...' : 'รหัส / ชื่อ / แผนก...'; document.getElementById('lastScanResult').classList.add('hidden'); document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('searchListArea').classList.add('hidden'); isScanProcessing = false; if (!document.getElementById('viewHome').classList.contains('hidden')) setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 300); }
+      async function cancelForm() { 
+          isFixingVerify = false; 
+          await safeStopScanner(); 
+          if (editRowNumber) { 
+              editRowNumber = null; switchTab('history'); 
+          } else { 
+              editRowNumber = null; 
+              if (lastActiveTab === 'dashboard') { switchTab('dashboard'); } 
+              else if (lastActiveTab === 'history') { switchTab('history'); } 
+              else { switchTab('scan'); resetSearch(); } 
+          } 
+      }
+
+      function resetSearch() { 
+          document.getElementById('searchInput').value = ''; 
+          document.getElementById('searchInput').placeholder = isLinkMode ? 'สแกนรหัสเดิม...' : 'รหัส / ชื่อ / แผนก...'; 
+          document.getElementById('lastScanResult').classList.add('hidden'); 
+          document.getElementById('notFoundArea').classList.add('hidden'); 
+          document.getElementById('searchListArea').classList.add('hidden'); 
+          isScanProcessing = false; 
+          if (!document.getElementById('viewHome').classList.contains('hidden')) {
+              setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 800); 
+          }
+      }
       
-      // 🟢 1. แก้ไขระบบกล้อง iPhone (บังคับ Environment เสมอ)
       function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
@@ -540,7 +585,6 @@
         .then(() => {
             isScannerRunning = true; isCameraBusy = false;
         }).catch(e => {
-            // ถ้าระบบบ่นว่าเปิดกล้องหลังไม่ได้ ให้สลับไปกล้องหน้าให้เอง
             if(mode === "environment") {
                 currentFacingMode = "user";
                 startCameraByFacingMode("user");
@@ -643,7 +687,6 @@
           printWindow.document.write(html); printWindow.document.close(); 
       }
       
-      // 🟢 2. โค้ด LoadHistory แบบคลีนๆ (ใช้ค่าจาก Sheet ส่งมาล้วนๆ)
       async function loadHistory() { 
           const list = document.getElementById('historyList'); 
           list.innerHTML = '<div class="text-center mt-3">กำลังโหลด...</div>'; 
@@ -749,7 +792,6 @@
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       
-      // 🟢 3. ผูกบาร์โค้ดยิงเข้า Firebase + อัปเดตเครื่องทันที
       function confirmLinkBarcode(product) { 
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { 
               if (result.isConfirmed) { 
@@ -760,7 +802,6 @@
                       const response = await fetch(FIREBASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newBcData) });
                       if(!response.ok) throw new Error("เกิดข้อผิดพลาดกับ Firebase");
 
-                      // แอบอัปเดตข้อมูลในเครื่องทันทีเพื่อให้สแกนต่อได้เลยไม่ต้องรอซิงค์ชีต
                       let pIdx = allProducts.findIndex(p => p.id === product.id);
                       if(pIdx > -1) {
                           allProducts[pIdx].allIds += " " + pendingBarcode.toLowerCase();
