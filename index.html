@@ -557,7 +557,7 @@
           }
       }
       
-     function toggleScanner() {
+      function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
         
