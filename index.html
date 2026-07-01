@@ -557,17 +557,27 @@
           }
       }
       
-      function toggleScanner() {
+     function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
+        
         if(isScannerRunning) {
             safeStopScanner();
         } else {
+            // สำคัญ: ล้างค่าการปิดแมนนวล และบังคับเป็นกล้องหลัง (environment) เสมอทุกครั้งที่เปิด
+            isManualClose = false; 
+            currentFacingMode = "environment"; 
+            
             document.getElementById('btnScan').classList.add('hidden');
             document.getElementById('cameraArea').classList.remove('hidden');
-            startCameraByFacingMode(currentFacingMode);
+            
+            // สำคัญ: ใส่ Delay ให้ฮาร์ดแวร์กล้อง iPhone คืนสติก่อนเปิดใหม่ แก้ปัญหาจอดำ
+            setTimeout(() => {
+                startCameraByFacingMode(currentFacingMode);
+            }, 400); 
         }
       }
+
       function nextCamera() {
         if(isCameraBusy) return;
         safeStopScanner(true).then(() => {
@@ -575,19 +585,37 @@
                 isManualClose = false;
                 currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
                 startCameraByFacingMode(currentFacingMode);
-            }, 500);
+            }, 600); // เพิ่มเวลาสลับกล้องนิดหน่อยให้ iOS ทำงานทัน
         });
       }
+
       function startCameraByFacingMode(mode) {
         if(isManualClose) return;
         document.getElementById('camStatus').innerText = mode === "environment" ? "กล้องหลัง" : "กล้องหน้า";
-        getScanner().start({ facingMode: mode }, { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, onScanSuccess, () => {})
+        
+        // ใช้ constraints ที่เจาะจงมากขึ้นสำหรับ iPhone 
+        const cameraConstraints = mode === "environment" 
+              ? { facingMode: { ideal: "environment" } } 
+              : { facingMode: "user" };
+
+        getScanner().start(
+            cameraConstraints, 
+            { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, 
+            onScanSuccess, 
+            () => {}
+        )
         .then(() => {
-            isScannerRunning = true; isCameraBusy = false;
+            isScannerRunning = true; 
+            isCameraBusy = false;
         }).catch(e => {
+            console.log("Camera Error:", e);
+            // หน่วงเวลาเช็คอีกรอบก่อนจะหนีไปกล้องหน้า ป้องกัน iPhone โหลดกล้องหลังไม่ทัน
             if(mode === "environment") {
-                currentFacingMode = "user";
-                startCameraByFacingMode("user");
+                setTimeout(() => {
+                    if(isManualClose) return;
+                    currentFacingMode = "user";
+                    startCameraByFacingMode("user");
+                }, 800); 
             } else {
                 document.getElementById('camStatus').innerText = "เกิดข้อผิดพลาด";
                 isCameraBusy = false;
