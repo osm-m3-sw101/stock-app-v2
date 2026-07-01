@@ -282,12 +282,16 @@
          resetIdleTimer();
       });
 
+      // 🔴 แก้ไขแล้ว: ปิดกล้องทันทีเวลาพับแอปพลิเคชัน
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
             let lastActive = localStorage.getItem('lastActiveTime');
             if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); }
-        } else if (document.visibilityState === 'hidden' && offlineQueue.length > 0) { 
-            syncBatchData(); 
+        } else if (document.visibilityState === 'hidden') { 
+            if (isScannerRunning) {
+                safeStopScanner();
+            }
+            if (offlineQueue.length > 0) syncBatchData(); 
         }
       });
 
@@ -380,10 +384,16 @@
           }
       }
 
+      // 🔴 แก้ไขแล้ว: ปิดกล้องก่อนสลับหน้าต่าง
       function switchTab(tab) {
+        if (tab !== 'scan' && isScannerRunning) {
+            safeStopScanner();
+        }
+        
         document.getElementById('viewHome').classList.add('hidden'); document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewHistory').classList.add('hidden'); document.getElementById('viewDashboard').classList.add('hidden');
         document.getElementById('navScan').classList.remove('active'); document.getElementById('navHistory').classList.remove('active'); document.getElementById('navDashboard').classList.remove('active');
         if (tab === 'scan' || tab === 'dashboard' || tab === 'history') { lastActiveTab = tab; }
+        
         if(tab === 'scan') { 
             document.getElementById('viewHome').classList.remove('hidden'); 
             document.getElementById('navScan').classList.add('active'); 
@@ -391,7 +401,7 @@
                 setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 800); 
             }
         } else if (tab === 'dashboard') { 
-            safeStopScanner(); document.getElementById('viewDashboard').classList.remove('hidden'); document.getElementById('navDashboard').classList.add('active'); 
+            document.getElementById('viewDashboard').classList.remove('hidden'); document.getElementById('navDashboard').classList.add('active'); 
             if(savedFilterType) document.getElementById('filterType').value = savedFilterType; 
             populateFilterValues(); 
             if(savedFilterValue) { 
@@ -401,7 +411,7 @@
                 if(exists) { select.value = savedFilterValue; calculateDashboard(); } 
             } 
         } else { 
-            safeStopScanner(); document.getElementById('viewHistory').classList.remove('hidden'); document.getElementById('navHistory').classList.add('active'); loadHistory(); 
+            document.getElementById('viewHistory').classList.remove('hidden'); document.getElementById('navHistory').classList.add('active'); loadHistory(); 
         }
       }
 
@@ -557,17 +567,22 @@
           }
       }
       
+      // 🔴 แก้ไขแล้ว: การตั้งค่าเปิดสลับกล้องให้เสถียรขึ้น
       function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
         if(isScannerRunning) {
             safeStopScanner();
         } else {
+            isManualClose = false;
+            currentFacingMode = "environment";
             document.getElementById('btnScan').classList.add('hidden');
             document.getElementById('cameraArea').classList.remove('hidden');
-            startCameraByFacingMode(currentFacingMode);
+            setTimeout(() => { startCameraByFacingMode(currentFacingMode); }, 400);
         }
       }
+
+      // 🔴 แก้ไขแล้ว: หน่วงเวลาเวลาสลับกล้อง
       function nextCamera() {
         if(isCameraBusy) return;
         safeStopScanner(true).then(() => {
@@ -578,24 +593,67 @@
             }, 600);
         });
       }
+
+      // 🔴 แก้ไขแล้ว: กันคำสั่งกล้องซ้อนกัน
       function startCameraByFacingMode(mode) {
         if(isManualClose) return;
         document.getElementById('camStatus').innerText = mode === "environment" ? "กล้องหลัง" : "กล้องหน้า";
-        getScanner().start({ facingMode: mode }, { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, onScanSuccess, () => {})
-        .then(() => {
-            isScannerRunning = true; isCameraBusy = false;
-        }).catch(e => {
-            if(mode === "environment") {
-                currentFacingMode = "user";
-                startCameraByFacingMode("user");
-            } else {
-                document.getElementById('camStatus').innerText = "เกิดข้อผิดพลาด";
+        
+        const cameraConstraints = mode === "environment" 
+              ? { facingMode: { ideal: "environment" } } 
+              : { facingMode: "user" };
+
+        const s = getScanner();
+        
+        const startStream = () => {
+            s.start(cameraConstraints, { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, onScanSuccess, () => {})
+            .then(() => {
+                isScannerRunning = true; 
                 isCameraBusy = false;
-            }
-        });
+            }).catch(e => {
+                console.log("Camera Error:", e);
+                isScannerRunning = false; 
+                isCameraBusy = false;
+                if(mode === "environment") {
+                    setTimeout(() => {
+                        if(isManualClose) return;
+                        currentFacingMode = "user";
+                        startCameraByFacingMode("user");
+                    }, 800); 
+                } else {
+                    document.getElementById('camStatus').innerText = "เกิดข้อผิดพลาด";
+                    finalizeStop();
+                }
+            });
+        };
+
+        if (s.isScanning || s.getState() === 2) {
+            s.stop().then(() => { s.clear(); startStream(); }).catch(() => startStream());
+        } else {
+            startStream();
+        }
       }
 
-      async function safeStopScanner(keepUI = false) { if(isCameraBusy) return; isCameraBusy = true; isManualClose = true; try { const s = getScanner(); if(s && s.isScanning) { await s.stop(); s.clear(); isScannerRunning=false; } } catch(e) { console.log(e); } finally { isCameraBusy = false; if (!keepUI) finalizeStop(); } }
+      // 🔴 แก้ไขแล้ว: บังคับปิดกล้องทะลุสเตตัสค้าง
+      async function safeStopScanner(keepUI = false) {
+        isManualClose = true; 
+        isCameraBusy = true; 
+        try { 
+            const s = getScanner(); 
+            if(s && (s.isScanning || s.getState() === 2)) { 
+                await s.stop(); 
+                s.clear(); 
+            } 
+        } catch(e) { 
+            console.log("Stop Camera Error:", e); 
+            document.getElementById('reader').innerHTML = '';
+        } finally { 
+            isScannerRunning = false; 
+            isCameraBusy = false; 
+            if (!keepUI) finalizeStop(); 
+        } 
+      }
+
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
       function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.5; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
 
