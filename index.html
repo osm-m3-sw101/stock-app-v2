@@ -282,15 +282,12 @@
          resetIdleTimer();
       });
 
-      // 🔴 แก้ไขแล้ว: ปิดกล้องทันทีเวลาพับแอปพลิเคชัน
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
             let lastActive = localStorage.getItem('lastActiveTime');
             if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); }
         } else if (document.visibilityState === 'hidden') { 
-            if (isScannerRunning) {
-                safeStopScanner();
-            }
+            if (isScannerRunning) { safeStopScanner(); }
             if (offlineQueue.length > 0) syncBatchData(); 
         }
       });
@@ -384,7 +381,6 @@
           }
       }
 
-      // 🔴 แก้ไขแล้ว: ปิดกล้องก่อนสลับหน้าต่าง
       function switchTab(tab) {
         if (tab !== 'scan' && isScannerRunning) {
             safeStopScanner();
@@ -567,7 +563,7 @@
           }
       }
       
-      // 🔴 แก้ไขแล้ว: การตั้งค่าเปิดสลับกล้องให้เสถียรขึ้น
+      // 🟢 1. อัปเดต toggleScanner ใหม่ ล็อคสถานะแน่นหนา
       function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
@@ -578,75 +574,77 @@
             currentFacingMode = "environment";
             document.getElementById('btnScan').classList.add('hidden');
             document.getElementById('cameraArea').classList.remove('hidden');
-            setTimeout(() => { startCameraByFacingMode(currentFacingMode); }, 400);
+            
+            isCameraBusy = true; // ล็อคสถานะกล้องกำลังยุ่งทันที
+            setTimeout(() => { startCameraByFacingMode(currentFacingMode); }, 300);
         }
       }
 
-      // 🔴 แก้ไขแล้ว: หน่วงเวลาเวลาสลับกล้อง
+      // 🟢 2. อัปเดต nextCamera
       function nextCamera() {
         if(isCameraBusy) return;
         safeStopScanner(true).then(() => {
             setTimeout(() => {
                 isManualClose = false;
                 currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+                
+                isCameraBusy = true; // ล็อคสถานะกล้องกำลังยุ่งทันที
                 startCameraByFacingMode(currentFacingMode);
-            }, 600);
+            }, 500);
         });
       }
 
-      // 🔴 แก้ไขแล้ว: กันคำสั่งกล้องซ้อนกัน
+      // 🟢 3. อัปเดตกลไกการเรียกกล้อง (ป้องกันแอปค้างจากคำสั่ง getState ที่ล้มเหลว)
       function startCameraByFacingMode(mode) {
-        if(isManualClose) return;
+        if(isManualClose) { isCameraBusy = false; return; }
         document.getElementById('camStatus').innerText = mode === "environment" ? "กล้องหลัง" : "กล้องหน้า";
-        
-        const cameraConstraints = mode === "environment" 
-              ? { facingMode: { ideal: "environment" } } 
-              : { facingMode: "user" };
 
         const s = getScanner();
-        
-        const startStream = () => {
-            s.start(cameraConstraints, { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, onScanSuccess, () => {})
-            .then(() => {
-                isScannerRunning = true; 
-                isCameraBusy = false;
-            }).catch(e => {
-                console.log("Camera Error:", e);
-                isScannerRunning = false; 
-                isCameraBusy = false;
-                if(mode === "environment") {
-                    setTimeout(() => {
-                        if(isManualClose) return;
-                        currentFacingMode = "user";
-                        startCameraByFacingMode("user");
-                    }, 800); 
-                } else {
-                    document.getElementById('camStatus').innerText = "เกิดข้อผิดพลาด";
-                    finalizeStop();
-                }
-            });
-        };
 
-        if (s.isScanning || s.getState() === 2) {
-            s.stop().then(() => { s.clear(); startStream(); }).catch(() => startStream());
-        } else {
-            startStream();
-        }
+        // ใช้ try-catch ป้องกันบั๊กกรณีโหลดกล้องครั้งแรกสุด แล้วตัวไลบรารียังไม่พร้อมให้เช็คสถานะ
+        try { if (s.getState() === 2) { s.stop(); s.clear(); } } catch (e) { }
+
+        // กลับมาใช้ constraint พื้นฐานที่เสถียรสุดบนมือถือทุกรุ่น
+        s.start(
+            { facingMode: mode },
+            { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 },
+            onScanSuccess,
+            () => {} // ละเว้นการพ่น error หายากลง console
+        ).then(() => {
+            isScannerRunning = true; 
+            isCameraBusy = false;
+        }).catch(e => {
+            console.log("Camera Error:", e);
+            if (mode === "environment" && !isManualClose) {
+                // หากกล้องหลังมีปัญหาหรือถูกใช้โดยแอปอื่น ให้ลองเปิดกล้องหน้าแทน
+                setTimeout(() => {
+                    currentFacingMode = "user";
+                    startCameraByFacingMode("user");
+                }, 500); 
+            } else {
+                document.getElementById('camStatus').innerText = "ไม่สามารถเปิดกล้องได้";
+                isScannerRunning = false;
+                isCameraBusy = false;
+            }
+        });
       }
 
-      // 🔴 แก้ไขแล้ว: บังคับปิดกล้องทะลุสเตตัสค้าง
+      // 🟢 4. อัปเดตระบบปิดกล้องฉุกเฉิน ไม่ให้ค้างตอนสลับหน้าจอ
       async function safeStopScanner(keepUI = false) {
         isManualClose = true; 
+        if (!isScannerRunning && !isCameraBusy) {
+            if (!keepUI) finalizeStop();
+            return;
+        }
+        
         isCameraBusy = true; 
         try { 
             const s = getScanner(); 
-            if(s && (s.isScanning || s.getState() === 2)) { 
-                await s.stop(); 
-                s.clear(); 
-            } 
+            // ใช้ try-catch หุ้มอีกชั้นเพื่อไม่ให้ error หยุดการเคลียร์ UI
+            try { if (s.getState() === 2) { await s.stop(); } } catch(e) {}
+            try { s.clear(); } catch(e) {}
         } catch(e) { 
             console.log("Stop Camera Error:", e); 
-            document.getElementById('reader').innerHTML = '';
         } finally { 
             isScannerRunning = false; 
             isCameraBusy = false; 
