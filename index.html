@@ -238,7 +238,7 @@
       let currentFacingMode = "environment"; 
       let html5QrcodeScannerObj = null;
       let dashListLeft = [], dashListDone = [], dashListVerify = [], allFilterOptionsData = [];
-      let offlineQueue = JSON.parse(localStorage.getItem('offlineQueue')) || [];
+      let offlineQueue = [];
       let isSyncing = false; 
       const AUTO_SYNC_LIMIT = 50; 
       const AUTO_SYNC_TIMER = 30000;
@@ -247,13 +247,16 @@
       
       function resetIdleTimer() { localStorage.setItem('lastActiveTime', Date.now()); }
 
-      window.onload = function() {
+      window.onload = async function() {
         if (window.performance) {
             const navEntries = window.performance.getEntriesByType("navigation");
             if (navEntries.length > 0 && navEntries[0].type === "reload") {
                 localforage.removeItem('localStockData'); 
             }
         }
+        // ดึงคิวจาก localforage
+        offlineQueue = await localforage.getItem('offlineQueue') || [];
+
         const savedUser = localStorage.getItem('stockAppUser');
         if (savedUser) { document.getElementById('employeeName').value = savedUser; login(); } 
         else document.getElementById('loginSection').classList.remove('hidden');
@@ -278,9 +281,7 @@
         }, 300000);
       };
 
-      document.getElementById('appSection').addEventListener('click', function() {
-         resetIdleTimer();
-      });
+      document.getElementById('appSection').addEventListener('click', function() { resetIdleTimer(); });
 
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
@@ -382,9 +383,7 @@
       }
 
       function switchTab(tab) {
-        if (tab !== 'scan' && isScannerRunning) {
-            safeStopScanner();
-        }
+        if (tab !== 'scan' && isScannerRunning) { safeStopScanner(); }
         
         document.getElementById('viewHome').classList.add('hidden'); document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewHistory').classList.add('hidden'); document.getElementById('viewDashboard').classList.add('hidden');
         document.getElementById('navScan').classList.remove('active'); document.getElementById('navHistory').classList.remove('active'); document.getElementById('navDashboard').classList.remove('active');
@@ -411,7 +410,7 @@
         }
       }
 
-      function saveData(isVerifyMode) {
+      async function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
         let nf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
@@ -453,7 +452,8 @@
             employeeName: employeeName, timestamp: new Date().getTime(), isVerify: isVerifyMode 
         };
         
-        offlineQueue.push(data); localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
+        offlineQueue.push(data); 
+        await localforage.setItem('offlineQueue', offlineQueue);
         
         let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
         let diff = sum - (Number(data.currentStockRef)||0);
@@ -465,12 +465,14 @@
             if(existingIdx > -1) verifyListRaw[existingIdx] = fullData; else verifyListRaw.push(fullData);
         } else { 
              rawCountedIds.push(data.productId); uniqueCountedIds.add(data.productId);
-             countedDetailMap[data.productId] = fullData;
+             if(!countedDetailMap[data.productId]) countedDetailMap[data.productId] = fullData;
+             else countedDetailMap[data.productId].diff += diff;
+
              if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
                  uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
                  fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
                  offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
-                 localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
+                 await localforage.setItem('offlineQueue', offlineQueue);
              }
         }
         updateQueueBadge(); cancelForm(); 
@@ -494,8 +496,7 @@
               if (response.ok) { 
                   const sentIds = dataToSend.map(d => d.qId);
                   offlineQueue = offlineQueue.filter(item => !sentIds.includes(item.qId)); 
-                  if(offlineQueue.length < 0) offlineQueue = []; 
-                  localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue)); 
+                  await localforage.setItem('offlineQueue', offlineQueue); 
                   updateQueueBadge(); 
               } else { updateQueueBadge(); }
           } catch (error) {
@@ -505,6 +506,7 @@
 
       function updateQueueBadge() { const badge = document.getElementById('queueStatusBadge'); if (offlineQueue.length > 0) { badge.classList.remove('hidden'); if(isSyncing) { badge.className = 'badge rounded-pill bg-info text-dark me-2'; badge.innerHTML = `<span class="spinner-border spinner-border-sm" style="width:10px;height:10px"></span> ส่งข้อมูล...`; } else { badge.className = 'badge rounded-pill bg-warning text-dark me-2'; badge.innerText = `รอส่ง: ${offlineQueue.length}`; } } else { badge.classList.add('hidden'); } }
       function handleEnter(e) { if(e.key === 'Enter') searchProduct(); }
+      
       function searchProduct(k) { let keyword = k || document.getElementById('searchInput').value; keyword = (keyword || "").trim(); isScanProcessing = false; if(!keyword) return; if(!allProducts || allProducts.length === 0) { Swal.fire({title: 'ข้อมูลยังไม่พร้อม', text: 'กำลังโหลด...', timer: 1500, showConfirmButton: false}); syncData(); return; } if(keyword.includes(',')) keyword = keyword.split(',')[0].trim(); const lowK = keyword.toLowerCase(); const matches = []; for(const p of allProducts) { if ((p.allIds||"").includes(lowK) || (p.name||"").toLowerCase().includes(lowK) || (p.subCode||"").toLowerCase().includes(lowK) || (p.dept||"").toLowerCase().includes(lowK)) matches.push(p); if(matches.length > 25) break; } document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('searchListArea').classList.add('hidden'); if(matches.length === 0) { if(isLinkMode) { Swal.fire('ไม่พบสินค้า', '', 'warning'); return; } document.getElementById('notFoundArea').classList.remove('hidden'); document.getElementById('notFoundCode').innerText = keyword; } else if (matches.length === 1) { if(isLinkMode) confirmLinkBarcode(matches[0]); else openForm(matches[0], false, keyword); } else { document.getElementById('viewHome').classList.remove('hidden'); document.getElementById('searchListArea').classList.remove('hidden'); const con = document.getElementById('listContainer'); con.innerHTML = ''; matches.forEach(item => { const div = document.createElement('a'); div.className = 'list-group-item list-group-item-action py-2'; div.innerHTML = `<div class="fw-bold text-truncate">${item.name}</div><div class="d-flex align-items-center mt-1 flex-wrap"><span class="badge badge-dept me-1">${item.dept}</span> <small class="text-muted">${item.id}</small></div>`; div.onclick = () => { if(isLinkMode) confirmLinkBarcode(item); else openForm(item, false, item.id); }; con.appendChild(div); }); } }
       
       function openForm(p, isHist, rawScan, existingData) {
@@ -563,7 +565,6 @@
           }
       }
       
-      // 🟢 1. อัปเดต toggleScanner ใหม่ ล็อคสถานะแน่นหนา
       function toggleScanner() {
         if(isCameraBusy) return;
         if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); }
@@ -575,48 +576,40 @@
             document.getElementById('btnScan').classList.add('hidden');
             document.getElementById('cameraArea').classList.remove('hidden');
             
-            isCameraBusy = true; // ล็อคสถานะกล้องกำลังยุ่งทันที
+            isCameraBusy = true;
             setTimeout(() => { startCameraByFacingMode(currentFacingMode); }, 300);
         }
       }
 
-      // 🟢 2. อัปเดต nextCamera
       function nextCamera() {
         if(isCameraBusy) return;
         safeStopScanner(true).then(() => {
             setTimeout(() => {
                 isManualClose = false;
                 currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-                
-                isCameraBusy = true; // ล็อคสถานะกล้องกำลังยุ่งทันที
+                isCameraBusy = true; 
                 startCameraByFacingMode(currentFacingMode);
             }, 500);
         });
       }
 
-      // 🟢 3. อัปเดตกลไกการเรียกกล้อง (ป้องกันแอปค้างจากคำสั่ง getState ที่ล้มเหลว)
       function startCameraByFacingMode(mode) {
         if(isManualClose) { isCameraBusy = false; return; }
         document.getElementById('camStatus').innerText = mode === "environment" ? "กล้องหลัง" : "กล้องหน้า";
 
         const s = getScanner();
-
-        // ใช้ try-catch ป้องกันบั๊กกรณีโหลดกล้องครั้งแรกสุด แล้วตัวไลบรารียังไม่พร้อมให้เช็คสถานะ
         try { if (s.getState() === 2) { s.stop(); s.clear(); } } catch (e) { }
 
-        // กลับมาใช้ constraint พื้นฐานที่เสถียรสุดบนมือถือทุกรุ่น
         s.start(
             { facingMode: mode },
             { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 },
             onScanSuccess,
-            () => {} // ละเว้นการพ่น error หายากลง console
+            () => {} 
         ).then(() => {
             isScannerRunning = true; 
             isCameraBusy = false;
         }).catch(e => {
-            console.log("Camera Error:", e);
             if (mode === "environment" && !isManualClose) {
-                // หากกล้องหลังมีปัญหาหรือถูกใช้โดยแอปอื่น ให้ลองเปิดกล้องหน้าแทน
                 setTimeout(() => {
                     currentFacingMode = "user";
                     startCameraByFacingMode("user");
@@ -629,7 +622,7 @@
         });
       }
 
-      // 🟢 4. อัปเดตระบบปิดกล้องฉุกเฉิน ไม่ให้ค้างตอนสลับหน้าจอ
+      // 🟢 ตัดกล้อง iOS แบบปลอดภัย
       async function safeStopScanner(keepUI = false) {
         isManualClose = true; 
         if (!isScannerRunning && !isCameraBusy) {
@@ -640,11 +633,13 @@
         isCameraBusy = true; 
         try { 
             const s = getScanner(); 
-            // ใช้ try-catch หุ้มอีกชั้นเพื่อไม่ให้ error หยุดการเคลียร์ UI
-            try { if (s.getState() === 2) { await s.stop(); } } catch(e) {}
+            if (s && s.getState() === 2) { await s.stop(); }
             try { s.clear(); } catch(e) {}
         } catch(e) { 
-            console.log("Stop Camera Error:", e); 
+            console.log("Stop Camera Error:", e);
+            // 🟢 iOS Hack: ถ้าปิดไม่ได้ให้ทำลาย Video Tag ทิ้ง
+            const video = document.querySelector('#reader video');
+            if(video) { video.pause(); video.srcObject = null; }
         } finally { 
             isScannerRunning = false; 
             isCameraBusy = false; 
@@ -848,15 +843,16 @@
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       
-      function confirmLinkBarcode(product) { 
+      // 🟢 แก้ไขเรื่องการบันทึกผูกบาร์โค้ด ให้ใช้ SDK ของ Firebase โดยตรง (ไม่ผ่าน Fetch ธรรมดาที่ติด Error Auth)
+      async function confirmLinkBarcode(product) { 
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { 
               if (result.isConfirmed) { 
                   showLoading("บันทึก..."); 
                   try {
                       const newBcData = { targetMainId: product.id, newBarcode: pendingBarcode, timestamp: new Date().getTime() };
-                      const FIREBASE_URL = "https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/new_barcodes.json";
-                      const response = await fetch(FIREBASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newBcData) });
-                      if(!response.ok) throw new Error("เกิดข้อผิดพลาดกับ Firebase");
+                      
+                      // ใช้ database.ref ของ Firebase SDK โดยตรง (แก้ปัญหาแจ้งเตือนในภาพได้เลย)
+                      await database.ref('new_barcodes').push(newBcData);
 
                       let pIdx = allProducts.findIndex(p => p.id === product.id);
                       if(pIdx > -1) {
