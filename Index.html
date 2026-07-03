@@ -530,7 +530,7 @@
             autoMergeAlert.classList.remove('hidden');
         } else { autoMergeAlert.classList.add('hidden'); }
 
-        // 🟢 เพิ่มโค้ดควบคุมปุ่มลบ ให้แสดงและทำงานได้เวลาแก้รายการรอตรวจ (ตามที่คุณต้องการ)
+        // 🟢 เพิ่มโค้ดควบคุมให้แสดงปุ่มลบในหน้ารอตรวจ (และตั้งค่า onClick ใหม่ให้ถูกต้อง)
         if (isFixingVerify) {
             document.getElementById('btnDelete').classList.remove('hidden');
             document.getElementById('btnDelete').onclick = deleteVerifyRecord;
@@ -798,7 +798,7 @@
           const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; 
           openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); 
           
-          // 🟢 ผูกคำสั่งปุ่มลบเมื่อเปิดจากหน้าประวัติ
+          // 🟢 ผูกคำสั่งเปิดใช้งานปุ่มลบ ให้ใช้งานกับหน้าประวัติได้
           document.getElementById('btnDelete').classList.remove('hidden'); 
           document.getElementById('btnDelete').onclick = deleteCurrentHistory;
       }
@@ -836,7 +836,7 @@
           }); 
       }
 
-      // 🟢 ฟังก์ชันสำหรับปุ่มลบในหน้ารอตรวจสอบ (เพิ่มเข้ามาใหม่โดยไม่แก้โค้ดอื่น)
+      // 🟢 ฟังก์ชันนี้สำหรับลบข้อมูลจากหน้ารอตรวจโดยเฉพาะ
       function deleteVerifyRecord() {
           Swal.fire({ title: 'ลบรายการรอตรวจสอบ?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => {
               if(result.isConfirmed) {
@@ -852,7 +852,6 @@
                       await localforage.setItem('offlineQueue', offlineQueue);
 
                       hideLoading(); cancelForm();
-                      // รีเฟรชแดชบอร์ดเพื่อให้รายการที่ถูกลบหายไปทันที
                       calculateDashboard();
                       Swal.fire({toast:true, position:'top-end', icon:'success', title:'ลบแล้ว', showConfirmButton:false, timer:1500});
                   }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); });
