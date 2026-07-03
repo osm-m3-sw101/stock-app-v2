@@ -111,7 +111,7 @@
 
         <div id="viewForm" class="hidden">
           <div class="card p-3 border border-primary">
-            <div id="editModeBadge" class="alert alert-warning py-1 text-center hidden mb-2" style="font-size:0.85rem">โหมดแก้ไข</div>
+            <div id="editModeBadge" class="alert alert-warning py-1 text-center hidden mb-2" style="font-size:0.85rem">โหมดแก้ไขประวัติ</div>
             <div id="verifyModeBadge" class="alert alert-warning py-1 text-center hidden mb-2 fw-bold" style="background:#ffc107; border:none; color:black; font-size:0.85rem;"><i class="bi bi-exclamation-triangle"></i> แก้ไขรายการรอตรวจสอบ</div>
             
             <div id="autoMergeAlert" class="alert alert-info py-2 text-center hidden mb-2" style="font-size:0.85rem; border:1px solid #b6d4fe;"></div>
@@ -421,8 +421,9 @@
 
         if (isVerifyMode && !isFixingVerify) {
             let existingRecord = null;
-            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify && q.employeeName === employeeName);
-            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id && v.employeeName === employeeName);
+            // 🟢 ปลดล็อกการเช็ค employeeName ออก เพื่อให้ดึงของเพื่อนมารวมได้
+            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
+            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id);
 
             if (qIdx > -1) {
                 existingRecord = offlineQueue[qIdx];
@@ -470,6 +471,7 @@
              if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
                  uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
                  fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
+                 // ลบเฉพาะของตัวเองในคิว
                  offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
                  await localforage.setItem('offlineQueue', offlineQueue);
              }
@@ -518,19 +520,18 @@
         document.getElementById('pStock').innerText = Number(p.stock || 0); document.getElementById('pUnit').innerText = p.unit || "";
         
         let autoMergeAlert = document.getElementById('autoMergeAlert');
-        let empName = localStorage.getItem('stockAppUser');
-        let prevVerify = verifyListRaw.find(v => v.id === p.id && v.employeeName === empName);
-        let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify && q.employeeName === empName);
+        // 🟢 ปลดล็อกการแจ้งเตือน เพื่อให้โชว์แจ้งเตือนเสมอถ้ารหัสนี้ถูกนับไปแล้ว ไม่ว่าจะเป็นของเพื่อนหรือของเรา
+        let prevVerify = verifyListRaw.find(v => v.id === p.id);
+        let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify);
         
         if (!isFixingVerify && !existingData && (prevVerify || qVerify)) {
             let ev = qVerify ? {f1:qVerify.front1, f2:qVerify.front2, f3:qVerify.front3, s1:qVerify.stock1, s2:qVerify.stock2, s3:qVerify.stock3} : prevVerify;
             let sumF = (Number(ev.f1)||0) + (Number(ev.f2)||0) + (Number(ev.f3)||0);
             let sumS = (Number(ev.s1)||0) + (Number(ev.s2)||0) + (Number(ev.s3)||0);
-            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> คุณนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
+            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> มีการนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
             autoMergeAlert.classList.remove('hidden');
         } else { autoMergeAlert.classList.add('hidden'); }
 
-        // 🟢 เพิ่มโค้ดควบคุมให้แสดงปุ่มลบในหน้ารอตรวจ (และตั้งค่า onClick ใหม่ให้ถูกต้อง)
         if (isFixingVerify) {
             document.getElementById('btnDelete').classList.remove('hidden');
             document.getElementById('btnDelete').onclick = deleteVerifyRecord;
@@ -798,7 +799,6 @@
           const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; 
           openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); 
           
-          // 🟢 ผูกคำสั่งเปิดใช้งานปุ่มลบ ให้ใช้งานกับหน้าประวัติได้
           document.getElementById('btnDelete').classList.remove('hidden'); 
           document.getElementById('btnDelete').onclick = deleteCurrentHistory;
       }
@@ -836,7 +836,6 @@
           }); 
       }
 
-      // 🟢 ฟังก์ชันนี้สำหรับลบข้อมูลจากหน้ารอตรวจโดยเฉพาะ
       function deleteVerifyRecord() {
           Swal.fire({ title: 'ลบรายการรอตรวจสอบ?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => {
               if(result.isConfirmed) {
@@ -859,6 +858,7 @@
           });
       }
 
+      // 🟢 อัปเดต: เปลี่ยนจากการแค่โชว์หน้าประวัติ มาเป็นบังคับดึงข้อมูลเข้าระบบใหม่ทั้งหมดหลังซิงค์เสร็จ
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
@@ -866,7 +866,10 @@
                   try {
                       const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow" });
                       const resData = await response.json();
-                      hideLoading(); Swal.fire('สำเร็จ', resData.message || 'เรียบร้อย', 'success'); loadHistory(); 
+                      hideLoading(); 
+                      Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false});
+                      // สั่งดึงข้อมูลล่าสุดกลับเข้ามาทันที
+                      forceSyncData();
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
               }
           });
