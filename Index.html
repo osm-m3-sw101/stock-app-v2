@@ -254,7 +254,6 @@
                 localforage.removeItem('localStockData'); 
             }
         }
-        // ดึงคิวจาก localforage
         offlineQueue = await localforage.getItem('offlineQueue') || [];
 
         const savedUser = localStorage.getItem('stockAppUser');
@@ -531,7 +530,7 @@
             autoMergeAlert.classList.remove('hidden');
         } else { autoMergeAlert.classList.add('hidden'); }
 
-        // 🟢 เปิดและผูกคำสั่งให้ปุ่มลบทำงานได้ถูกต้องในแต่ละโหมด
+        // 🟢 เพิ่มโค้ดควบคุมปุ่มลบ ให้แสดงและทำงานได้เวลาแก้รายการรอตรวจ (ตามที่คุณต้องการ)
         if (isFixingVerify) {
             document.getElementById('btnDelete').classList.remove('hidden');
             document.getElementById('btnDelete').onclick = deleteVerifyRecord;
@@ -877,7 +876,6 @@
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       
-      // 🟢 แก้ไขเรื่องการบันทึกผูกบาร์โค้ด ให้ใช้ SDK ของ Firebase โดยตรง (ไม่ผ่าน Fetch ธรรมดาที่ติด Error Auth)
       async function confirmLinkBarcode(product) { 
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { 
               if (result.isConfirmed) { 
@@ -885,7 +883,6 @@
                   try {
                       const newBcData = { targetMainId: product.id, newBarcode: pendingBarcode, timestamp: new Date().getTime() };
                       
-                      // ใช้ database.ref ของ Firebase SDK โดยตรง (แก้ปัญหาแจ้งเตือนในภาพได้เลย)
                       await database.ref('new_barcodes').push(newBcData);
 
                       let pIdx = allProducts.findIndex(p => p.id === product.id);
