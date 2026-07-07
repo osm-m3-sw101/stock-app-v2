@@ -665,10 +665,33 @@
       function renderFilterOptions(list) { const select = document.getElementById('selFilterValue'); const currentVal = select.value; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; list.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; select.appendChild(opt); }); if(list.includes(currentVal)) select.value = currentVal; }
       
       function calculateDashboard() { 
-          const type = document.getElementById('filterType').value; const val = document.getElementById('selFilterValue').value; 
+          const type = document.getElementById('filterType').value; 
+          const val = document.getElementById('selFilterValue').value; 
           savedFilterType = type; savedFilterValue = val;
-          if(!val) { document.getElementById('statTotal').innerText = "0"; document.getElementById('statDone').innerText = "0"; document.getElementById('statVerify').innerText = "0"; document.getElementById('statLeft').innerText = "0"; document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; return; } 
-          const filtered = allProducts.filter(p => { const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); const isZero = (Number(p.stock) === 0); const isNormal = (String(p.status||"").trim() === 'ปกติ'); return matchGroup && ((!isZero) || (isZero && isNormal)); }); dashListLeft = []; dashListDone = []; dashListVerify = []; 
+          
+          if(!val) { 
+              document.getElementById('statTotal').innerText = "0"; document.getElementById('statDone').innerText = "0"; 
+              document.getElementById('statVerify').innerText = "0"; document.getElementById('statLeft').innerText = "0"; 
+              document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; 
+              return; 
+          } 
+          
+          const filtered = allProducts.filter(p => { 
+              const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); 
+              
+              // ลอจิกการกรองตามที่คุณต้องการเป๊ะๆ
+              const stockVal = Number(p.stock) || 0;
+              const isZero = (stockVal === 0);
+              const statusText = String(p.status || "").trim();
+              const isNormal = statusText.includes('ปกติ'); // ดักจับคำว่า "สถานะปกติ" หรือ "ปกติ"
+              
+              // ถ้าสต๊อกไม่เท่ากับ 0 ให้โชว์เลย หรือ ถ้าสต๊อก 0 ต้องเป็นสถานะปกติเท่านั้นถึงจะโชว์
+              const shouldShow = (!isZero) || (isZero && isNormal);
+
+              return matchGroup && shouldShow; 
+          }); 
+          
+          dashListLeft = []; dashListDone = []; dashListVerify = []; 
           
           filtered.forEach(p => { 
               let verifyItem = verifyListRaw.find(v => v.id === p.id);
@@ -679,7 +702,15 @@
                   if(cData) { p.diff = cData.diff; dashListDone.push({...p, ...cData}); } else { dashListDone.push(p); }
               } else { dashListLeft.push(p); }
           }); 
-          document.getElementById('statTotal').innerText = filtered.length; document.getElementById('statDone').innerText = dashListDone.length; document.getElementById('statVerify').innerText = dashListVerify.length; document.getElementById('statLeft').innerText = dashListLeft.length; if(document.getElementById('vVerify').checked) renderDashboardList('verify'); else if(document.getElementById('vDone').checked) renderDashboardList('done'); else renderDashboardList('left'); 
+          
+          document.getElementById('statTotal').innerText = filtered.length; 
+          document.getElementById('statDone').innerText = dashListDone.length; 
+          document.getElementById('statVerify').innerText = dashListVerify.length; 
+          document.getElementById('statLeft').innerText = dashListLeft.length; 
+          
+          if(document.getElementById('vVerify').checked) renderDashboardList('verify'); 
+          else if(document.getElementById('vDone').checked) renderDashboardList('done'); 
+          else renderDashboardList('left'); 
       }
       
       function renderDashboardList(mode) { 
@@ -700,12 +731,35 @@
       function openExportMenu() { const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); let list = [], typeText = ""; if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); }
       
       function getAllItemsForReport() {
-          const type = document.getElementById('filterType').value; const val = document.getElementById('selFilterValue').value; if (!val) return [];
-          const filteredMasters = allProducts.filter(p => { const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); const isZero = (Number(p.stock) === 0); const isNormal = (String(p.status||"").trim() === 'ปกติ'); return matchGroup && ((!isZero) || (isZero && isNormal)); });
+          const type = document.getElementById('filterType').value; 
+          const val = document.getElementById('selFilterValue').value; 
+          if (!val) return [];
+          
+          const filteredMasters = allProducts.filter(p => { 
+              const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); 
+              
+              // ลอจิกการกรองแบบเดียวกันสำหรับตอนปริ้นท์
+              const stockVal = Number(p.stock) || 0;
+              const isZero = (stockVal === 0);
+              const statusText = String(p.status || "").trim();
+              const isNormal = statusText.includes('ปกติ'); 
+              
+              const shouldShow = (!isZero) || (isZero && isNormal);
+
+              return matchGroup && shouldShow; 
+          });
+          
           return filteredMasters.map(p => {
-              let verifyItem = verifyListRaw.find(v => v.id === p.id); if (verifyItem) { return { ...p, ...verifyItem, status: 'รอตรวจสอบ' }; }
-              if (uniqueCountedIds.has(p.id)) { let cData = countedDetailMap[p.id]; if (cData) return { ...p, ...cData, status: 'นับแล้ว' }; return { ...p, status: 'นับแล้ว' }; }
-              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - Number(p.stock)) };
+              let verifyItem = verifyListRaw.find(v => v.id === p.id); 
+              if (verifyItem) { return { ...p, ...verifyItem, status: 'รอตรวจสอบ' }; }
+              
+              if (uniqueCountedIds.has(p.id)) { 
+                  let cData = countedDetailMap[p.id]; 
+                  if (cData) return { ...p, ...cData, status: 'นับแล้ว' }; 
+                  return { ...p, status: 'นับแล้ว' }; 
+              }
+              
+              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - (Number(p.stock)||0)) };
           });
       }
 
