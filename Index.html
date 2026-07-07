@@ -132,9 +132,9 @@
               <small class="text-muted">สต๊อกระบบ:</small> <span id="pStock" class="h4 fw-bold mb-0 text-dark"></span> <span id="pUnit" class="text-muted small"></span>
             </div>
 
-            <div class="d-flex gap-2 mb-2">
-               <button onclick="saveData(true)" id="btnVerify" class="btn btn-warning flex-grow-1 fw-bold shadow-sm py-2"><i class="bi bi-exclamation-circle"></i> นับซ้ำ (ต่อช่อง)</button>
-               <button onclick="saveData(false)" id="btnSave" class="btn btn-success flex-grow-1 fw-bold shadow-sm py-2" style="flex: 1.5;"><i class="bi bi-check-lg"></i> บันทึก</button>
+            <div class="d-flex gap-2 mb-2 align-items-center">
+               <button onclick="saveData(true)" id="btnVerify" class="btn btn-warning fw-bold shadow-sm py-1" style="flex: 1; font-size: 0.85rem;"><i class="bi bi-exclamation-circle"></i> นับซ้ำ</button>
+               <button onclick="saveData(false)" id="btnSave" class="btn btn-success fw-bold shadow-sm py-2" style="flex: 2.5; font-size: 1.1rem;"><i class="bi bi-check-lg"></i> บันทึก (สรุป)</button>
             </div>
             <div class="mb-3 text-end">
                <button onclick="cancelForm()" class="btn btn-outline-secondary btn-sm px-3">ยกเลิก / กลับ</button>
@@ -152,7 +152,7 @@
               <span class="small">รวมหน้าจอ:</span> <strong id="totalCount" style="font-size:1.25em">0</strong> <span class="ms-2 small text-muted">(ผลต่างเฉพาะรอบนี้: <span id="diffVal">0</span>)</span>
             </div>
             
-            <button id="btnDelete" class="btn btn-outline-danger btn-sm w-100 mt-2 hidden"><i class="bi bi-trash"></i> ลบรายการนี้</button>
+            <button id="btnDelete" class="btn btn-outline-danger btn-sm w-100 mt-2" style="display: none;"><i class="bi bi-trash"></i> ลบรายการนี้</button>
           </div>
         </div>
 
@@ -412,17 +412,18 @@
       async function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
-        let nf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
-        let nf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
-        let nf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
-        let ns1 = document.getElementById('s1').value === "" ? "" : Number(document.getElementById('s1').value); 
-        let ns2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
-        let ns3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
+        // ดึงตัวเลขจากหน้าจอเพียวๆ ไม่บวกเพิ่มเอง เพื่อส่งไปให้หลังบ้านจัดการ
+        let rawNf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
+        let rawNf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
+        let rawNf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
+        let rawNs1 = document.getElementById('s1').value === "" ? "" : Number(document.getElementById('s1').value); 
+        let rawNs2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
+        let rawNs3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
 
         const data = { 
             qId: Date.now().toString(36) + Math.random().toString(36).substring(2),
             productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, 
-            front1: nf1, front2: nf2, front3: nf3, stock1: ns1, stock2: ns2, stock3: ns3, 
+            front1: rawNf1, front2: rawNf2, front3: rawNf3, stock1: rawNs1, stock2: rawNs2, stock3: rawNs3, 
             employeeName: employeeName, timestamp: new Date().getTime(), isVerify: isVerifyMode 
         };
 
@@ -430,9 +431,8 @@
         let qVerifyIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
 
         if (!isVerifyMode) {
-            // 🟢 โหมดบันทึกปกติ (หรือหัวหน้าเข้ามากดเซฟจบงาน)
+            // โหมดบันทึกสรุปผล (เคลียร์ของเก่าทิ้งให้หมด)
             if (prevVerifyIdx > -1 || qVerifyIdx > -1 || isFixingVerify) {
-                // สั่งลบประวัติที่ค้างในโหมดรอตรวจออกให้เกลี้ยง เพื่อเริ่มใหม่เป็นสถานะปกติ
                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" });
                 uniqueVerifyIds.delete(currentProduct.id);
                 verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id);
@@ -441,34 +441,33 @@
             offlineQueue.push(data);
             rawCountedIds.push(data.productId);
             uniqueCountedIds.add(data.productId);
-            let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
+            
+            let sum = (Number(rawNf1)||0) + (Number(rawNf2)||0) + (Number(rawNf3)||0) + (Number(rawNs1)||0) + (Number(rawNs2)||0) + (Number(rawNs3)||0);
             let diff = sum - (Number(data.currentStockRef)||0);
-            let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: employeeName };
-
-            countedDetailMap[data.productId] = fullData;
+            countedDetailMap[data.productId] = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: rawNf1, f2: rawNf2, f3: rawNf3, s1: rawNs1, s2: rawNs2, s3: rawNs3, employeeName: employeeName };
 
         } else {
-            // 🟢 โหมด "นับซ้ำ" (Verify Mode)
-            offlineQueue.push(data); // ห้ามสั่งลบของคนอื่นเด็ดขาด แค่ต่อคิวส่งของตัวเองขึ้นไป
+            // โหมดนับซ้ำ: ส่งยอดดิบเข้าคิว (ไม่บวกเอง)
+            offlineQueue.push(data); 
 
-            // จำลองการรวมร่างเฉพาะบนหน้าจอ UI เพื่อให้คนสแกนเห็นยอดรวมทันที
+            // รวมร่างหลอกๆ เฉพาะบน UI หน้าจอให้เห็นอัปเดตทันที
             let eF = [], eS = [];
             if (prevVerifyIdx > -1) {
                 let ex = verifyListRaw[prevVerifyIdx];
                 [ex.f1, ex.f2, ex.f3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
                 [ex.s1, ex.s2, ex.s3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
             }
-            [nf1, nf2, nf3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
-            [ns1, ns2, ns3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
+            [rawNf1, rawNf2, rawNf3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
+            [rawNs1, rawNs2, rawNs3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
 
-            const assignSlots = (arr) => { let s1 = arr[0] || ""; let s2 = arr[1] || ""; let s3 = arr[2] || ""; if (arr.length > 3) s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); return [s1, s2, s3]; };
+            const assignSlots = (arr) => { let s1 = arr[0] !== undefined ? arr[0] : ""; let s2 = arr[1] !== undefined ? arr[1] : ""; let s3 = arr[2] !== undefined ? arr[2] : ""; if (arr.length > 3) s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); return [s1, s2, s3]; };
             let [mf1, mf2, mf3] = assignSlots(eF);
             let [ms1, ms2, ms3] = assignSlots(eS);
+            
             let mSum = (Number(mf1)||0) + (Number(mf2)||0) + (Number(mf3)||0) + (Number(ms1)||0) + (Number(ms2)||0) + (Number(ms3)||0);
             let mDiff = mSum - (Number(data.currentStockRef)||0);
 
             let mergedData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: mDiff, f1: mf1, f2: mf2, f3: mf3, s1: ms1, s2: ms2, s3: ms3, employeeName: "" };
-
             uniqueVerifyIds.add(data.productId);
             if(prevVerifyIdx > -1) verifyListRaw[prevVerifyIdx] = mergedData; else verifyListRaw.push(mergedData);
         }
@@ -536,18 +535,15 @@
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
 
-        // 🟢 แก้ไขปุ่มลบให้แสดงแบบบังคับ (Force Block) เพื่อแก้ปัญหาปุ่มไม่ยอมขึ้น
+        // 🟢 บังคับแสดงปุ่มลบให้เด็ดขาด
         let btnDel = document.getElementById('btnDelete');
         if (isFixingVerify) {
-            btnDel.classList.remove('hidden');
             btnDel.style.display = "block";
             btnDel.onclick = deleteVerifyRecord;
         } else if (isHist) {
-            btnDel.classList.remove('hidden');
             btnDel.style.display = "block";
             btnDel.onclick = deleteCurrentHistory;
         } else {
-            btnDel.classList.add('hidden');
             btnDel.style.display = "none";
             btnDel.onclick = null;
         }
