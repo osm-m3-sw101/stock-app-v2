@@ -421,7 +421,6 @@
 
         if (isVerifyMode && !isFixingVerify) {
             let existingRecord = null;
-            // 🟢 ปลดล็อกการเช็ค employeeName ออก เพื่อให้ดึงของเพื่อนมารวมได้
             let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
             let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id);
 
@@ -434,8 +433,8 @@
             }
 
             if (existingRecord) {
-                let eFronts = [Number(existingRecord.f1)||0, Number(existingRecord.f2)||0, Number(existingRecord.f3)||0].filter(v => v > 0);
-                let eStocks = [Number(existingRecord.s1)||0, Number(existingRecord.s2)||0, Number(existingRecord.s3)||0].filter(v => v > 0);
+                let eFronts = []; [existingRecord.f1, existingRecord.f2, existingRecord.f3].forEach(v => { if(v !== "" && v !== null) eFronts.push(Number(v)); });
+                let eStocks = []; [existingRecord.s1, existingRecord.s2, existingRecord.s3].forEach(v => { if(v !== "" && v !== null) eStocks.push(Number(v)); });
                 let nFronts = [Number(nf1)||0, Number(nf2)||0, Number(nf3)||0].filter(v => v > 0);
                 let nStocks = [Number(ns1)||0, Number(ns2)||0, Number(ns3)||0].filter(v => v > 0);
                 let mergedFronts = [...eFronts, ...nFronts];
@@ -457,7 +456,7 @@
         
         let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
         let diff = sum - (Number(data.currentStockRef)||0);
-        let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: data.employeeName };
+        let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: "" };
 
         if (isVerifyMode) { 
             uniqueVerifyIds.add(data.productId); 
@@ -466,18 +465,17 @@
         } else { 
              rawCountedIds.push(data.productId); uniqueCountedIds.add(data.productId);
              if(!countedDetailMap[data.productId]) countedDetailMap[data.productId] = fullData;
-             else countedDetailMap[data.productId].diff += diff;
+             else countedDetailMap[data.productId].diff = diff;
 
              if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
                  uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
                  fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
-                 // ลบเฉพาะของตัวเองในคิว
-                 offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
+                 offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify));
                  await localforage.setItem('offlineQueue', offlineQueue);
              }
         }
         updateQueueBadge(); cancelForm(); 
-        const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกแล้ว';
+        const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกเรียบร้อย';
         const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
         Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
         syncBatchData(); 
@@ -520,7 +518,6 @@
         document.getElementById('pStock').innerText = Number(p.stock || 0); document.getElementById('pUnit').innerText = p.unit || "";
         
         let autoMergeAlert = document.getElementById('autoMergeAlert');
-        // 🟢 ปลดล็อกการแจ้งเตือน เพื่อให้โชว์แจ้งเตือนเสมอถ้ารหัสนี้ถูกนับไปแล้ว ไม่ว่าจะเป็นของเพื่อนหรือของเรา
         let prevVerify = verifyListRaw.find(v => v.id === p.id);
         let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify);
         
@@ -532,20 +529,25 @@
             autoMergeAlert.classList.remove('hidden');
         } else { autoMergeAlert.classList.add('hidden'); }
 
-        if (isFixingVerify) {
-            document.getElementById('btnDelete').classList.remove('hidden');
-            document.getElementById('btnDelete').onclick = deleteVerifyRecord;
-        } else if (!isHist) {
-            document.getElementById('btnDelete').classList.add('hidden');
-            document.getElementById('btnDelete').onclick = null;
-        }
-
         document.querySelectorAll('.input-qty').forEach(el => el.value = ''); 
         if (existingData) {
             const v = (val) => (val == 0 || val == null || val === "") ? "" : val;
             document.getElementById('f1').value = v(existingData.f1); document.getElementById('f2').value = v(existingData.f2); document.getElementById('f3').value = v(existingData.f3);
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
+
+        // แก้ไขลอจิกการแสดงผลปุ่มลบให้แสดงเสมอเมื่ออยู่ในโหมดตรวจซ้ำ/แก้ประวัติ
+        if (isFixingVerify) {
+            document.getElementById('btnDelete').classList.remove('hidden');
+            document.getElementById('btnDelete').onclick = deleteVerifyRecord;
+        } else if (isHist) {
+            document.getElementById('btnDelete').classList.remove('hidden');
+            document.getElementById('btnDelete').onclick = deleteCurrentHistory;
+        } else {
+            document.getElementById('btnDelete').classList.add('hidden');
+            document.getElementById('btnDelete').onclick = null;
+        }
+
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
       }
       
