@@ -677,15 +677,20 @@
           } 
           
           const filtered = allProducts.filter(p => { 
-              const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); 
+              // 🟢 ดักปัญหาช่องว่าง (Spacebar) และตัวพิมพ์เล็ก/ใหญ่ ในแผนกและรหัสซับ
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
-              // ลอจิกการกรองตามที่คุณต้องการเป๊ะๆ
-              const stockVal = Number(p.stock) || 0;
+              // 🟢 ดักปัญหาตัวเลขสต๊อกมีลูกน้ำ (,) หรือเป็นค่าว่าง
+              const rawStock = String(p.stock || "0").replace(/,/g, '');
+              const stockVal = Number(rawStock) || 0;
               const isZero = (stockVal === 0);
-              const statusText = String(p.status || "").trim();
-              const isNormal = statusText.includes('ปกติ'); // ดักจับคำว่า "สถานะปกติ" หรือ "ปกติ"
               
-              // ถ้าสต๊อกไม่เท่ากับ 0 ให้โชว์เลย หรือ ถ้าสต๊อก 0 ต้องเป็นสถานะปกติเท่านั้นถึงจะโชว์
+              const statusText = String(p.status || "").trim();
+              const isNormal = statusText.includes('ปกติ'); 
+              
               const shouldShow = (!isZero) || (isZero && isNormal);
 
               return matchGroup && shouldShow; 
@@ -736,11 +741,16 @@
           if (!val) return [];
           
           const filteredMasters = allProducts.filter(p => { 
-              const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); 
+              // 🟢 ดักปัญหาช่องว่าง (Spacebar) สำหรับตอนปริ้นท์ออก PDF
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
-              // ลอจิกการกรองแบบเดียวกันสำหรับตอนปริ้นท์
-              const stockVal = Number(p.stock) || 0;
+              const rawStock = String(p.stock || "0").replace(/,/g, '');
+              const stockVal = Number(rawStock) || 0;
               const isZero = (stockVal === 0);
+              
               const statusText = String(p.status || "").trim();
               const isNormal = statusText.includes('ปกติ'); 
               
@@ -759,7 +769,9 @@
                   return { ...p, status: 'นับแล้ว' }; 
               }
               
-              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - (Number(p.stock)||0)) };
+              const rawStock = String(p.stock || "0").replace(/,/g, '');
+              const stockVal = Number(rawStock) || 0;
+              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - stockVal) };
           });
       }
 
