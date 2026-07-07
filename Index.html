@@ -419,66 +419,66 @@
         let ns2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
         let ns3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
 
-        if (isVerifyMode && !isFixingVerify) {
-            let existingRecord = null;
-            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
-            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id);
-
-            if (qIdx > -1) {
-                existingRecord = offlineQueue[qIdx];
-                offlineQueue.splice(qIdx, 1); 
-            } else if (vIdx > -1) {
-                existingRecord = verifyListRaw[vIdx];
-                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }); 
-            }
-
-            if (existingRecord) {
-                let eFronts = []; [existingRecord.f1, existingRecord.f2, existingRecord.f3].forEach(v => { if(v !== "" && v !== null) eFronts.push(Number(v)); });
-                let eStocks = []; [existingRecord.s1, existingRecord.s2, existingRecord.s3].forEach(v => { if(v !== "" && v !== null) eStocks.push(Number(v)); });
-                let nFronts = [Number(nf1)||0, Number(nf2)||0, Number(nf3)||0].filter(v => v > 0);
-                let nStocks = [Number(ns1)||0, Number(ns2)||0, Number(ns3)||0].filter(v => v > 0);
-                let mergedFronts = [...eFronts, ...nFronts];
-                let mergedStocks = [...eStocks, ...nStocks];
-                const assignSlots = (arr) => { let s1 = arr[0] || ""; let s2 = arr[1] || ""; let s3 = arr[2] || ""; if (arr.length > 3) { s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); } return [s1, s2, s3]; };
-                [nf1, nf2, nf3] = assignSlots(mergedFronts); [ns1, ns2, ns3] = assignSlots(mergedStocks);
-            }
-        }
-
         const data = { 
             qId: Date.now().toString(36) + Math.random().toString(36).substring(2),
             productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, 
             front1: nf1, front2: nf2, front3: nf3, stock1: ns1, stock2: ns2, stock3: ns3, 
             employeeName: employeeName, timestamp: new Date().getTime(), isVerify: isVerifyMode 
         };
-        
-        offlineQueue.push(data); 
-        await localforage.setItem('offlineQueue', offlineQueue);
-        
-        let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
-        let diff = sum - (Number(data.currentStockRef)||0);
-        let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: "" };
 
-        if (isVerifyMode) { 
-            uniqueVerifyIds.add(data.productId); 
-            let existingIdx = verifyListRaw.findIndex(v => v.id === data.productId);
-            if(existingIdx > -1) verifyListRaw[existingIdx] = fullData; else verifyListRaw.push(fullData);
-        } else { 
-             rawCountedIds.push(data.productId); uniqueCountedIds.add(data.productId);
-             if(!countedDetailMap[data.productId]) countedDetailMap[data.productId] = fullData;
-             else countedDetailMap[data.productId].diff = diff;
+        let prevVerifyIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id);
+        let qVerifyIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
 
-             if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
-                 uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
-                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
-                 offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify));
-                 await localforage.setItem('offlineQueue', offlineQueue);
-             }
+        if (!isVerifyMode) {
+            // 🟢 โหมดบันทึกปกติ (หรือหัวหน้าเข้ามากดเซฟจบงาน)
+            if (prevVerifyIdx > -1 || qVerifyIdx > -1 || isFixingVerify) {
+                // สั่งลบประวัติที่ค้างในโหมดรอตรวจออกให้เกลี้ยง เพื่อเริ่มใหม่เป็นสถานะปกติ
+                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" });
+                uniqueVerifyIds.delete(currentProduct.id);
+                verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id);
+                offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify));
+            }
+            offlineQueue.push(data);
+            rawCountedIds.push(data.productId);
+            uniqueCountedIds.add(data.productId);
+            let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
+            let diff = sum - (Number(data.currentStockRef)||0);
+            let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: employeeName };
+
+            countedDetailMap[data.productId] = fullData;
+
+        } else {
+            // 🟢 โหมด "นับซ้ำ" (Verify Mode)
+            offlineQueue.push(data); // ห้ามสั่งลบของคนอื่นเด็ดขาด แค่ต่อคิวส่งของตัวเองขึ้นไป
+
+            // จำลองการรวมร่างเฉพาะบนหน้าจอ UI เพื่อให้คนสแกนเห็นยอดรวมทันที
+            let eF = [], eS = [];
+            if (prevVerifyIdx > -1) {
+                let ex = verifyListRaw[prevVerifyIdx];
+                [ex.f1, ex.f2, ex.f3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
+                [ex.s1, ex.s2, ex.s3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
+            }
+            [nf1, nf2, nf3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
+            [ns1, ns2, ns3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
+
+            const assignSlots = (arr) => { let s1 = arr[0] || ""; let s2 = arr[1] || ""; let s3 = arr[2] || ""; if (arr.length > 3) s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); return [s1, s2, s3]; };
+            let [mf1, mf2, mf3] = assignSlots(eF);
+            let [ms1, ms2, ms3] = assignSlots(eS);
+            let mSum = (Number(mf1)||0) + (Number(mf2)||0) + (Number(mf3)||0) + (Number(ms1)||0) + (Number(ms2)||0) + (Number(ms3)||0);
+            let mDiff = mSum - (Number(data.currentStockRef)||0);
+
+            let mergedData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: mDiff, f1: mf1, f2: mf2, f3: mf3, s1: ms1, s2: ms2, s3: ms3, employeeName: "" };
+
+            uniqueVerifyIds.add(data.productId);
+            if(prevVerifyIdx > -1) verifyListRaw[prevVerifyIdx] = mergedData; else verifyListRaw.push(mergedData);
         }
-        updateQueueBadge(); cancelForm(); 
+
+        await localforage.setItem('offlineQueue', offlineQueue);
+        updateQueueBadge(); cancelForm();
         const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกเรียบร้อย';
         const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
         Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
-        syncBatchData(); 
+        syncBatchData();
       }
 
       async function syncBatchData() { 
@@ -536,16 +536,20 @@
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
 
-        // แก้ไขลอจิกการแสดงผลปุ่มลบให้แสดงเสมอเมื่ออยู่ในโหมดตรวจซ้ำ/แก้ประวัติ
+        // 🟢 แก้ไขปุ่มลบให้แสดงแบบบังคับ (Force Block) เพื่อแก้ปัญหาปุ่มไม่ยอมขึ้น
+        let btnDel = document.getElementById('btnDelete');
         if (isFixingVerify) {
-            document.getElementById('btnDelete').classList.remove('hidden');
-            document.getElementById('btnDelete').onclick = deleteVerifyRecord;
+            btnDel.classList.remove('hidden');
+            btnDel.style.display = "block";
+            btnDel.onclick = deleteVerifyRecord;
         } else if (isHist) {
-            document.getElementById('btnDelete').classList.remove('hidden');
-            document.getElementById('btnDelete').onclick = deleteCurrentHistory;
+            btnDel.classList.remove('hidden');
+            btnDel.style.display = "block";
+            btnDel.onclick = deleteCurrentHistory;
         } else {
-            document.getElementById('btnDelete').classList.add('hidden');
-            document.getElementById('btnDelete').onclick = null;
+            btnDel.classList.add('hidden');
+            btnDel.style.display = "none";
+            btnDel.onclick = null;
         }
 
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
