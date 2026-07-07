@@ -677,19 +677,18 @@
           } 
           
           const filtered = allProducts.filter(p => { 
-              // 🟢 ดักปัญหาช่องว่าง (Spacebar) และตัวพิมพ์เล็ก/ใหญ่ ในแผนกและรหัสซับ
               const pDept = String(p.dept || "").trim().toUpperCase();
               const pSub = String(p.subCode || "").trim().toUpperCase();
               const vFilter = String(val || "").trim().toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
-              // 🟢 ดักปัญหาตัวเลขสต๊อกมีลูกน้ำ (,) หรือเป็นค่าว่าง
-              const rawStock = String(p.stock || "0").replace(/,/g, '');
-              const stockVal = Number(rawStock) || 0;
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
               const statusText = String(p.status || "").trim();
-              const isNormal = statusText.includes('ปกติ'); 
+              // 🟢 ดักคำว่า "ปกติ" หรือถ้าหลังบ้านส่งค่ามาเป็นช่องว่าง ก็ให้ถือว่าปกติและโชว์ออกมา
+              const isNormal = statusText.includes('ปกติ') || statusText === ''; 
               
               const shouldShow = (!isZero) || (isZero && isNormal);
 
@@ -741,18 +740,17 @@
           if (!val) return [];
           
           const filteredMasters = allProducts.filter(p => { 
-              // 🟢 ดักปัญหาช่องว่าง (Spacebar) สำหรับตอนปริ้นท์ออก PDF
               const pDept = String(p.dept || "").trim().toUpperCase();
               const pSub = String(p.subCode || "").trim().toUpperCase();
               const vFilter = String(val || "").trim().toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
-              const rawStock = String(p.stock || "0").replace(/,/g, '');
-              const stockVal = Number(rawStock) || 0;
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
               const statusText = String(p.status || "").trim();
-              const isNormal = statusText.includes('ปกติ'); 
+              const isNormal = statusText.includes('ปกติ') || statusText === ''; 
               
               const shouldShow = (!isZero) || (isZero && isNormal);
 
@@ -769,8 +767,8 @@
                   return { ...p, status: 'นับแล้ว' }; 
               }
               
-              const rawStock = String(p.stock || "0").replace(/,/g, '');
-              const stockVal = Number(rawStock) || 0;
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
               return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - stockVal) };
           });
       }
