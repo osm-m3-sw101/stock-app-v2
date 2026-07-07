@@ -214,7 +214,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzj09fEsB1qgErArjVNVoWtaremXJWBEHV-SLpwAQqqe87-k6zsdIUNCI8WCCPxGD3Z/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOy_7D93dvgHQQEtlo2BX0GuNwUSx4ENy6bkI_Q0Nsobpql2vKPUL2IxpmXHQuuQPQ/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -677,17 +677,18 @@
           } 
           
           const filtered = allProducts.filter(p => { 
-              const pDept = String(p.dept || "").trim().toUpperCase();
-              const pSub = String(p.subCode || "").trim().toUpperCase();
-              const vFilter = String(val || "").trim().toUpperCase();
+              // 🟢 บังคับลบช่องว่าง (Space) ออกทั้งหมด เผื่อเผลอเคาะเว้นวรรคในชีต
+              const pDept = String(p.dept || "").replace(/\s/g, '').toUpperCase();
+              const pSub = String(p.subCode || "").replace(/\s/g, '').toUpperCase();
+              const vFilter = String(val || "").replace(/\s/g, '').toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
               const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
               const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
-              const statusText = String(p.status || "").trim();
-              // 🟢 ดักคำว่า "ปกติ" หรือถ้าหลังบ้านส่งค่ามาเป็นช่องว่าง ก็ให้ถือว่าปกติและโชว์ออกมา
+              // 🟢 บังคับลบช่องว่างออกจากสถานะ เผื่อพิมพ์ว่า "สถานะ ปกติ"
+              const statusText = String(p.status || "").replace(/\s/g, ''); 
               const isNormal = statusText.includes('ปกติ') || statusText === ''; 
               
               const shouldShow = (!isZero) || (isZero && isNormal);
@@ -740,16 +741,16 @@
           if (!val) return [];
           
           const filteredMasters = allProducts.filter(p => { 
-              const pDept = String(p.dept || "").trim().toUpperCase();
-              const pSub = String(p.subCode || "").trim().toUpperCase();
-              const vFilter = String(val || "").trim().toUpperCase();
+              const pDept = String(p.dept || "").replace(/\s/g, '').toUpperCase();
+              const pSub = String(p.subCode || "").replace(/\s/g, '').toUpperCase();
+              const vFilter = String(val || "").replace(/\s/g, '').toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
               const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
               const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
-              const statusText = String(p.status || "").trim();
+              const statusText = String(p.status || "").replace(/\s/g, ''); 
               const isNormal = statusText.includes('ปกติ') || statusText === ''; 
               
               const shouldShow = (!isZero) || (isZero && isNormal);
