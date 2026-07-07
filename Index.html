@@ -677,32 +677,32 @@
           } 
           
           const filtered = allProducts.filter(p => { 
-              // 🟢 บังคับลบช่องว่าง (Space) ออกทั้งหมด เผื่อเผลอเคาะเว้นวรรคในชีต
-              const pDept = String(p.dept || "").replace(/\s/g, '').toUpperCase();
-              const pSub = String(p.subCode || "").replace(/\s/g, '').toUpperCase();
-              const vFilter = String(val || "").replace(/\s/g, '').toUpperCase();
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
+              // แปลงสต๊อกให้ปลอดภัยที่สุด
               const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
               const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
-              // 🟢 บังคับลบช่องว่างออกจากสถานะ เผื่อพิมพ์ว่า "สถานะ ปกติ"
-              const statusText = String(p.status || "").replace(/\s/g, ''); 
-              const isNormal = statusText.includes('ปกติ') || statusText === ''; 
+              // ลบช่องว่างและเครื่องหมายคำพูดทิ้งให้หมด 
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              // จับแค่คำว่า "ปก" เพื่อดัก "สถานะปกติ" ทุูปแบบ
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
               
-              const shouldShow = (!isZero) || (isZero && isNormal);
-
-              return matchGroup && shouldShow; 
+              // กฎ: ไม่ใช่ 0 โชว์เสมอ | เป็น 0 ต้องเป็นสถานะปกติถึงจะโชว์
+              return matchGroup && (!isZero || isNormal); 
           }); 
           
           dashListLeft = []; dashListDone = []; dashListVerify = []; 
           
           filtered.forEach(p => { 
-              let verifyItem = verifyListRaw.find(v => v.id === p.id);
+              let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id));
               if (verifyItem) {
                   p.diff = verifyItem.diff; dashListVerify.push({...p, ...verifyItem}); 
-              } else if (uniqueCountedIds.has(p.id)) {
+              } else if (uniqueCountedIds.has(String(p.id))) {
                   let cData = countedDetailMap[p.id];
                   if(cData) { p.diff = cData.diff; dashListDone.push({...p, ...cData}); } else { dashListDone.push(p); }
               } else { dashListLeft.push(p); }
@@ -741,28 +741,26 @@
           if (!val) return [];
           
           const filteredMasters = allProducts.filter(p => { 
-              const pDept = String(p.dept || "").replace(/\s/g, '').toUpperCase();
-              const pSub = String(p.subCode || "").replace(/\s/g, '').toUpperCase();
-              const vFilter = String(val || "").replace(/\s/g, '').toUpperCase();
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
               const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
               const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
-              const statusText = String(p.status || "").replace(/\s/g, ''); 
-              const isNormal = statusText.includes('ปกติ') || statusText === ''; 
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
               
-              const shouldShow = (!isZero) || (isZero && isNormal);
-
-              return matchGroup && shouldShow; 
+              return matchGroup && (!isZero || isNormal); 
           });
           
           return filteredMasters.map(p => {
-              let verifyItem = verifyListRaw.find(v => v.id === p.id); 
+              let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id)); 
               if (verifyItem) { return { ...p, ...verifyItem, status: 'รอตรวจสอบ' }; }
               
-              if (uniqueCountedIds.has(p.id)) { 
+              if (uniqueCountedIds.has(String(p.id))) { 
                   let cData = countedDetailMap[p.id]; 
                   if (cData) return { ...p, ...cData, status: 'นับแล้ว' }; 
                   return { ...p, status: 'นับแล้ว' }; 
