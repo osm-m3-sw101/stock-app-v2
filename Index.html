@@ -174,8 +174,9 @@
             <div class="d-flex justify-content-between mb-2">
                 <div class="btn-group" role="group">
                     <input type="radio" class="btn-check" name="dashview" id="vLeft" checked onclick="renderDashboardList('left')"><label class="btn btn-outline-danger btn-sm" for="vLeft">ยังไม่นับ</label>
-                    <input type="radio" class="btn-check" name="dashview" id="vVerify" onclick="renderDashboardList('verify')"><label class="btn btn-outline-warning btn-sm text-dark" for="vVerify">รอตรวจ</label>
                     <input type="radio" class="btn-check" name="dashview" id="vDone" onclick="renderDashboardList('done')"><label class="btn btn-outline-success btn-sm" for="vDone">นับแล้ว</label>
+                    <input type="radio" class="btn-check" name="dashview" id="vDiffNotZero" onclick="renderDashboardList('diffNotZero')"><label class="btn btn-outline-primary btn-sm" for="vDiffNotZero">ไม่ตรง</label>
+                    <input type="radio" class="btn-check" name="dashview" id="vVerify" onclick="renderDashboardList('verify')"><label class="btn btn-outline-warning btn-sm text-dark" for="vVerify">รอตรวจ</label>
                 </div>
                 <div>
                     <button class="btn btn-dark btn-sm" onclick="openExportMenu()"><i class="bi bi-printer"></i></button>
@@ -214,7 +215,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxXHSvo3ltEJqM1XCXJwU4gEfjVlNeY_IaXZwaIqihjxJ72T5m-ZVw_nRVZMYARcfik/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwNBzpgY7-2_aQ0W0Eu5-1Hcjbv59QSvL5JS1ptM4YbHiGMmqdvEnu2YVMl0VLV3pnL/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -237,7 +238,10 @@
 
       let currentFacingMode = "environment"; 
       let html5QrcodeScannerObj = null;
-      let dashListLeft = [], dashListDone = [], dashListVerify = [], allFilterOptionsData = [];
+      
+      // ตัวแปรเก็บข้อมูล Dashboard แบบใหม่
+      let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
+      
       let offlineQueue = [];
       let isSyncing = false; 
       const AUTO_SYNC_LIMIT = 50; 
@@ -412,7 +416,6 @@
       async function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
-        // ดึงตัวเลขจากหน้าจอเพียวๆ ไม่บวกเพิ่มเอง เพื่อส่งไปให้หลังบ้านจัดการ
         let rawNf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
         let rawNf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
         let rawNf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
@@ -431,7 +434,6 @@
         let qVerifyIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
 
         if (!isVerifyMode) {
-            // โหมดบันทึกสรุปผล (เคลียร์ของเก่าทิ้งให้หมด)
             if (prevVerifyIdx > -1 || qVerifyIdx > -1 || isFixingVerify) {
                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" });
                 uniqueVerifyIds.delete(currentProduct.id);
@@ -446,11 +448,14 @@
             let diff = sum - (Number(data.currentStockRef)||0);
             countedDetailMap[data.productId] = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: rawNf1, f2: rawNf2, f3: rawNf3, s1: rawNs1, s2: rawNs2, s3: rawNs3, employeeName: employeeName };
 
+            await localforage.setItem('offlineQueue', offlineQueue);
+            updateQueueBadge(); cancelForm();
+            const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
+            Toast.fire({icon: 'success', title: `บันทึกเรียบร้อย (${offlineQueue.length})`});
+            syncBatchData();
+            
         } else {
-            // โหมดนับซ้ำ: ส่งยอดดิบเข้าคิว (ไม่บวกเอง)
-            offlineQueue.push(data); 
-
-            // รวมร่างหลอกๆ เฉพาะบน UI หน้าจอให้เห็นอัปเดตทันที
+            // ส่งตรงเข้า Google Sheets เลย ไม่ผ่านคิว Firebase
             let eF = [], eS = [];
             if (prevVerifyIdx > -1) {
                 let ex = verifyListRaw[prevVerifyIdx];
@@ -467,17 +472,33 @@
             let mSum = (Number(mf1)||0) + (Number(mf2)||0) + (Number(mf3)||0) + (Number(ms1)||0) + (Number(ms2)||0) + (Number(ms3)||0);
             let mDiff = mSum - (Number(data.currentStockRef)||0);
 
-            let mergedData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: mDiff, f1: mf1, f2: mf2, f3: mf3, s1: ms1, s2: ms2, s3: ms3, employeeName: "" };
-            uniqueVerifyIds.add(data.productId);
-            if(prevVerifyIdx > -1) verifyListRaw[prevVerifyIdx] = mergedData; else verifyListRaw.push(mergedData);
+            let mergedData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: mDiff, f1: mf1, f2: mf2, f3: mf3, s1: ms1, s2: ms2, s3: ms3, employeeName: employeeName };
+            
+            showLoading("กำลังบันทึกนับซ้ำ...");
+            fetch(GAS_API_URL + "?action=saveVerifyDirect", {
+                method: 'POST',
+                body: JSON.stringify(mergedData)
+            }).then(r => r.json()).then(res => {
+                hideLoading();
+                if(res.success) {
+                    uniqueVerifyIds.add(data.productId);
+                    if(prevVerifyIdx > -1) verifyListRaw[prevVerifyIdx] = mergedData; else verifyListRaw.push(mergedData);
+                    
+                    // ป้องกันการค้างในคิวเก่าถ้าเคยมี
+                    offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify));
+                    localforage.setItem('offlineQueue', offlineQueue);
+                    
+                    Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: 'บันทึกนับซ้ำลงชีตแล้ว', showConfirmButton: false, timer: 1500});
+                    cancelForm();
+                    if(lastActiveTab === 'dashboard') calculateDashboard();
+                } else {
+                    Swal.fire('Error', res.error, 'error');
+                }
+            }).catch(e => {
+                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error');
+            });
+            return; 
         }
-
-        await localforage.setItem('offlineQueue', offlineQueue);
-        updateQueueBadge(); cancelForm();
-        const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกเรียบร้อย';
-        const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
-        Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
-        syncBatchData();
       }
 
       async function syncBatchData() { 
@@ -535,7 +556,6 @@
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
 
-        // 🟢 บังคับแสดงปุ่มลบให้เด็ดขาด
         let btnDel = document.getElementById('btnDelete');
         if (isFixingVerify) {
             btnDel.style.display = "block";
@@ -646,7 +666,6 @@
             if (s && s.getState() === 2) { await s.stop(); }
             try { s.clear(); } catch(e) {}
         } catch(e) { 
-            console.log("Stop Camera Error:", e);
             const video = document.querySelector('#reader video');
             if(video) { video.pause(); video.srcObject = null; }
         } finally { 
@@ -682,21 +701,17 @@
               const vFilter = String(val || "").trim().toUpperCase();
               const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
               
-              // แปลงสต๊อกให้ปลอดภัยที่สุด
               const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
               const stockVal = parseFloat(rawStr) || 0;
               const isZero = (stockVal === 0);
               
-              // ลบช่องว่างและเครื่องหมายคำพูดทิ้งให้หมด 
               const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
-              // จับแค่คำว่า "ปก" เพื่อดัก "สถานะปกติ" ทุูปแบบ
               const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
               
-              // กฎ: ไม่ใช่ 0 โชว์เสมอ | เป็น 0 ต้องเป็นสถานะปกติถึงจะโชว์
               return matchGroup && (!isZero || isNormal); 
           }); 
           
-          dashListLeft = []; dashListDone = []; dashListVerify = []; 
+          dashListLeft = []; dashListDone = []; dashListVerify = []; dashListDiffNotZero = [];
           
           filtered.forEach(p => { 
               let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id));
@@ -704,7 +719,11 @@
                   p.diff = verifyItem.diff; dashListVerify.push({...p, ...verifyItem}); 
               } else if (uniqueCountedIds.has(String(p.id))) {
                   let cData = countedDetailMap[p.id];
-                  if(cData) { p.diff = cData.diff; dashListDone.push({...p, ...cData}); } else { dashListDone.push(p); }
+                  if(cData) { 
+                      p.diff = cData.diff; 
+                      dashListDone.push({...p, ...cData}); 
+                      if (p.diff !== 0) dashListDiffNotZero.push({...p, ...cData});
+                  } else { dashListDone.push(p); }
               } else { dashListLeft.push(p); }
           }); 
           
@@ -715,25 +734,58 @@
           
           if(document.getElementById('vVerify').checked) renderDashboardList('verify'); 
           else if(document.getElementById('vDone').checked) renderDashboardList('done'); 
+          else if(document.getElementById('vDiffNotZero').checked) renderDashboardList('diffNotZero');
           else renderDashboardList('left'); 
       }
       
       function renderDashboardList(mode) { 
-          let list = []; if (mode === 'left') list = dashListLeft; else if (mode === 'done') list = dashListDone; else if (mode === 'verify') list = dashListVerify; 
+          let list = []; 
+          if (mode === 'left') list = dashListLeft; 
+          else if (mode === 'done') list = dashListDone; 
+          else if (mode === 'verify') list = dashListVerify; 
+          else if (mode === 'diffNotZero') list = dashListDiffNotZero;
+
           const container = document.getElementById('dashboardListContainer'); container.innerHTML = ''; 
           if(list.length === 0) { container.innerHTML = '<div class="text-center text-muted p-3">ไม่มีรายการ</div>'; return; } 
           list.forEach(p => { 
               let badge = ''; let diffText = '';
-              if (mode === 'done') { badge = `<span class="badge bg-success ms-1">นับแล้ว</span>`; if(p.diff !== undefined) { const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); const sign = p.diff > 0 ? '+' : ''; diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; } } 
-              else if (mode === 'verify') { badge = `<span class="badge bg-warning text-dark ms-1">ตรวจสอบ</span>`; if(p.diff !== undefined) { const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); const sign = p.diff > 0 ? '+' : ''; diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; } } 
+              if (mode === 'done' || mode === 'diffNotZero') { 
+                  badge = mode === 'diffNotZero' ? `<span class="badge bg-primary ms-1">ไม่ตรง</span>` : `<span class="badge bg-success ms-1">นับแล้ว</span>`; 
+                  if(p.diff !== undefined) { 
+                      const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const sign = p.diff > 0 ? '+' : ''; 
+                      diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; 
+                  } 
+              } 
+              else if (mode === 'verify') { 
+                  badge = `<span class="badge bg-warning text-dark ms-1">ตรวจสอบ</span>`; 
+                  if(p.diff !== undefined) { 
+                      const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const sign = p.diff > 0 ? '+' : ''; 
+                      diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; 
+                  } 
+              } 
               const div = document.createElement('a'); div.className = 'list-group-item list-group-item-action'; 
-              div.onclick = () => { if (mode === 'verify') { isFixingVerify = true; openForm(p, false, p.id, p); } else if (mode === 'done') { isFixingVerify = false; openForm(p, false, p.id, p); } else { isFixingVerify = false; openForm(p, false, p.id); } }; 
+              div.onclick = () => { 
+                  if (mode === 'verify') { isFixingVerify = true; openForm(p, false, p.id, p); } 
+                  else if (mode === 'done' || mode === 'diffNotZero') { isFixingVerify = false; openForm(p, false, p.id, p); } 
+                  else { isFixingVerify = false; openForm(p, false, p.id); } 
+              }; 
               div.innerHTML = `<div class="fw-bold text-truncate">${p.name}</div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${p.id}</small><div><span class="badge bg-light text-dark border">${p.stock}</span> ${diffText} ${badge}</div></div>`; container.appendChild(div); 
           }); 
       }
       
       function switchToVerifyTab() { document.getElementById('vVerify').checked = true; renderDashboardList('verify'); }
-      function openExportMenu() { const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); let list = [], typeText = ""; if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); }
+      function openExportMenu() { 
+          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vDiffNotZero').checked ? 'diffNotZero' : (document.getElementById('vLeft').checked ? 'left' : 'done')); 
+          let list = [], typeText = ""; 
+          if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } 
+          else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } 
+          else if(listMode === 'diffNotZero') { list = dashListDiffNotZero; typeText = "รายการผลต่างไม่ตรง"; }
+          else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+
+          Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); 
+      }
       
       function getAllItemsForReport() {
           const type = document.getElementById('filterType').value; 
@@ -775,7 +827,12 @@
       function handleExport(mode) { 
           let list = []; let typeText = ""; let filterInfo = { type: document.getElementById('filterType').options[document.getElementById('filterType').selectedIndex].text, value: document.getElementById('selFilterValue').value };
           if (mode === 'all') { list = getAllItemsForReport(); typeText = "รายการทั้งหมด (รวมทุกสถานะ)"; if (list.length === 0) return Swal.fire('แจ้งเตือน', 'กรุณาเลือกเงื่อนไขก่อน (แผนก/รหัสซับ)', 'warning'); printData(list, typeText, filterInfo); return; }
-          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vDiffNotZero').checked ? 'diffNotZero' : (document.getElementById('vLeft').checked ? 'left' : 'done')); 
+          if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } 
+          else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } 
+          else if(listMode === 'diffNotZero') { list = dashListDiffNotZero; typeText = "รายการผลต่างไม่ตรง"; }
+          else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+
           if (list.length === 0) return Swal.fire('ไม่มีข้อมูล', '', 'warning');
           
           if (mode === 'sheet') { 
@@ -923,7 +980,6 @@
           });
       }
 
-      // 🟢 อัปเดต: เปลี่ยนจากการแค่โชว์หน้าประวัติ มาเป็นบังคับดึงข้อมูลเข้าระบบใหม่ทั้งหมดหลังซิงค์เสร็จ
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
@@ -933,7 +989,6 @@
                       const resData = await response.json();
                       hideLoading(); 
                       Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false});
-                      // สั่งดึงข้อมูลล่าสุดกลับเข้ามาทันที
                       forceSyncData();
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
               }
