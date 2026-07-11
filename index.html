@@ -111,7 +111,7 @@
 
         <div id="viewForm" class="hidden">
           <div class="card p-3 border border-primary">
-            <div id="editModeBadge" class="alert alert-warning py-1 text-center hidden mb-2" style="font-size:0.85rem">โหมดแก้ไข</div>
+            <div id="editModeBadge" class="alert alert-warning py-1 text-center hidden mb-2" style="font-size:0.85rem">โหมดแก้ไขประวัติ</div>
             <div id="verifyModeBadge" class="alert alert-warning py-1 text-center hidden mb-2 fw-bold" style="background:#ffc107; border:none; color:black; font-size:0.85rem;"><i class="bi bi-exclamation-triangle"></i> แก้ไขรายการรอตรวจสอบ</div>
             
             <div id="autoMergeAlert" class="alert alert-info py-2 text-center hidden mb-2" style="font-size:0.85rem; border:1px solid #b6d4fe;"></div>
@@ -132,9 +132,9 @@
               <small class="text-muted">สต๊อกระบบ:</small> <span id="pStock" class="h4 fw-bold mb-0 text-dark"></span> <span id="pUnit" class="text-muted small"></span>
             </div>
 
-            <div class="d-flex gap-2 mb-2">
-               <button onclick="saveData(true)" id="btnVerify" class="btn btn-warning flex-grow-1 fw-bold shadow-sm py-2"><i class="bi bi-exclamation-circle"></i> นับซ้ำ (ต่อช่อง)</button>
-               <button onclick="saveData(false)" id="btnSave" class="btn btn-success flex-grow-1 fw-bold shadow-sm py-2" style="flex: 1.5;"><i class="bi bi-check-lg"></i> บันทึก</button>
+            <div class="d-flex gap-2 mb-2 align-items-center">
+               <button onclick="saveData(true)" id="btnVerify" class="btn btn-warning fw-bold shadow-sm py-1" style="flex: 1; font-size: 0.85rem;"><i class="bi bi-exclamation-circle"></i> นับซ้ำ</button>
+               <button onclick="saveData(false)" id="btnSave" class="btn btn-success fw-bold shadow-sm py-2" style="flex: 2.5; font-size: 1.1rem;"><i class="bi bi-check-lg"></i> บันทึก (สรุป)</button>
             </div>
             <div class="mb-3 text-end">
                <button onclick="cancelForm()" class="btn btn-outline-secondary btn-sm px-3">ยกเลิก / กลับ</button>
@@ -152,7 +152,7 @@
               <span class="small">รวมหน้าจอ:</span> <strong id="totalCount" style="font-size:1.25em">0</strong> <span class="ms-2 small text-muted">(ผลต่างเฉพาะรอบนี้: <span id="diffVal">0</span>)</span>
             </div>
             
-            <button id="btnDelete" onclick="deleteCurrentHistory()" class="btn btn-outline-danger btn-sm w-100 mt-2 hidden"><i class="bi bi-trash"></i> ลบรายการนี้</button>
+            <button id="btnDelete" class="btn btn-outline-danger btn-sm w-100 mt-2" style="display: none;"><i class="bi bi-trash"></i> ลบรายการนี้</button>
           </div>
         </div>
 
@@ -174,8 +174,9 @@
             <div class="d-flex justify-content-between mb-2">
                 <div class="btn-group" role="group">
                     <input type="radio" class="btn-check" name="dashview" id="vLeft" checked onclick="renderDashboardList('left')"><label class="btn btn-outline-danger btn-sm" for="vLeft">ยังไม่นับ</label>
-                    <input type="radio" class="btn-check" name="dashview" id="vVerify" onclick="renderDashboardList('verify')"><label class="btn btn-outline-warning btn-sm text-dark" for="vVerify">รอตรวจ</label>
                     <input type="radio" class="btn-check" name="dashview" id="vDone" onclick="renderDashboardList('done')"><label class="btn btn-outline-success btn-sm" for="vDone">นับแล้ว</label>
+                    <input type="radio" class="btn-check" name="dashview" id="vDiffNotZero" onclick="renderDashboardList('diffNotZero')"><label class="btn btn-outline-primary btn-sm" for="vDiffNotZero">ไม่ตรง</label>
+                    <input type="radio" class="btn-check" name="dashview" id="vVerify" onclick="renderDashboardList('verify')"><label class="btn btn-outline-warning btn-sm text-dark" for="vVerify">รอตรวจ</label>
                 </div>
                 <div>
                     <button class="btn btn-dark btn-sm" onclick="openExportMenu()"><i class="bi bi-printer"></i></button>
@@ -214,7 +215,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOy_7D93dvgHQQEtlo2BX0GuNwUSx4ENy6bkI_Q0Nsobpql2vKPUL2IxpmXHQuuQPQ/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwNBzpgY7-2_aQ0W0Eu5-1Hcjbv59QSvL5JS1ptM4YbHiGMmqdvEnu2YVMl0VLV3pnL/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -237,7 +238,10 @@
 
       let currentFacingMode = "environment"; 
       let html5QrcodeScannerObj = null;
-      let dashListLeft = [], dashListDone = [], dashListVerify = [], allFilterOptionsData = [];
+      
+      // ตัวแปรเก็บข้อมูล Dashboard แบบใหม่
+      let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
+      
       let offlineQueue = [];
       let isSyncing = false; 
       const AUTO_SYNC_LIMIT = 50; 
@@ -254,7 +258,6 @@
                 localforage.removeItem('localStockData'); 
             }
         }
-        // ดึงคิวจาก localforage
         offlineQueue = await localforage.getItem('offlineQueue') || [];
 
         const savedUser = localStorage.getItem('stockAppUser');
@@ -413,73 +416,89 @@
       async function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
-        let nf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
-        let nf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
-        let nf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
-        let ns1 = document.getElementById('s1').value === "" ? "" : Number(document.getElementById('s1').value); 
-        let ns2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
-        let ns3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
-
-        if (isVerifyMode && !isFixingVerify) {
-            let existingRecord = null;
-            let qIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify && q.employeeName === employeeName);
-            let vIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id && v.employeeName === employeeName);
-
-            if (qIdx > -1) {
-                existingRecord = offlineQueue[qIdx];
-                offlineQueue.splice(qIdx, 1); 
-            } else if (vIdx > -1) {
-                existingRecord = verifyListRaw[vIdx];
-                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }); 
-            }
-
-            if (existingRecord) {
-                let eFronts = [Number(existingRecord.f1)||0, Number(existingRecord.f2)||0, Number(existingRecord.f3)||0].filter(v => v > 0);
-                let eStocks = [Number(existingRecord.s1)||0, Number(existingRecord.s2)||0, Number(existingRecord.s3)||0].filter(v => v > 0);
-                let nFronts = [Number(nf1)||0, Number(nf2)||0, Number(nf3)||0].filter(v => v > 0);
-                let nStocks = [Number(ns1)||0, Number(ns2)||0, Number(ns3)||0].filter(v => v > 0);
-                let mergedFronts = [...eFronts, ...nFronts];
-                let mergedStocks = [...eStocks, ...nStocks];
-                const assignSlots = (arr) => { let s1 = arr[0] || ""; let s2 = arr[1] || ""; let s3 = arr[2] || ""; if (arr.length > 3) { s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); } return [s1, s2, s3]; };
-                [nf1, nf2, nf3] = assignSlots(mergedFronts); [ns1, ns2, ns3] = assignSlots(mergedStocks);
-            }
-        }
+        let rawNf1 = document.getElementById('f1').value === "" ? "" : Number(document.getElementById('f1').value); 
+        let rawNf2 = document.getElementById('f2').value === "" ? "" : Number(document.getElementById('f2').value); 
+        let rawNf3 = document.getElementById('f3').value === "" ? "" : Number(document.getElementById('f3').value);
+        let rawNs1 = document.getElementById('s1').value === "" ? "" : Number(document.getElementById('s1').value); 
+        let rawNs2 = document.getElementById('s2').value === "" ? "" : Number(document.getElementById('s2').value); 
+        let rawNs3 = document.getElementById('s3').value === "" ? "" : Number(document.getElementById('s3').value);
 
         const data = { 
             qId: Date.now().toString(36) + Math.random().toString(36).substring(2),
             productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, 
-            front1: nf1, front2: nf2, front3: nf3, stock1: ns1, stock2: ns2, stock3: ns3, 
+            front1: rawNf1, front2: rawNf2, front3: rawNf3, stock1: rawNs1, stock2: rawNs2, stock3: rawNs3, 
             employeeName: employeeName, timestamp: new Date().getTime(), isVerify: isVerifyMode 
         };
-        
-        offlineQueue.push(data); 
-        await localforage.setItem('offlineQueue', offlineQueue);
-        
-        let sum = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
-        let diff = sum - (Number(data.currentStockRef)||0);
-        let fullData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: data.front1, f2: data.front2, f3: data.front3, s1: data.stock1, s2: data.stock2, s3: data.stock3, employeeName: data.employeeName };
 
-        if (isVerifyMode) { 
-            uniqueVerifyIds.add(data.productId); 
-            let existingIdx = verifyListRaw.findIndex(v => v.id === data.productId);
-            if(existingIdx > -1) verifyListRaw[existingIdx] = fullData; else verifyListRaw.push(fullData);
-        } else { 
-             rawCountedIds.push(data.productId); uniqueCountedIds.add(data.productId);
-             if(!countedDetailMap[data.productId]) countedDetailMap[data.productId] = fullData;
-             else countedDetailMap[data.productId].diff += diff;
+        let prevVerifyIdx = verifyListRaw.findIndex(v => v.id === currentProduct.id);
+        let qVerifyIdx = offlineQueue.findIndex(q => q.productId === currentProduct.id && q.isVerify);
 
-             if (uniqueVerifyIds.has(data.productId) || isFixingVerify) {
-                 uniqueVerifyIds.delete(data.productId); verifyListRaw = verifyListRaw.filter(v => v.id !== data.productId);
-                 fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(data.productId), { redirect: "follow" });
-                 offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify && q.employeeName === employeeName));
-                 await localforage.setItem('offlineQueue', offlineQueue);
-             }
+        if (!isVerifyMode) {
+            if (prevVerifyIdx > -1 || qVerifyIdx > -1 || isFixingVerify) {
+                fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" });
+                uniqueVerifyIds.delete(currentProduct.id);
+                verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id);
+                offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify));
+            }
+            offlineQueue.push(data);
+            rawCountedIds.push(data.productId);
+            uniqueCountedIds.add(data.productId);
+            
+            let sum = (Number(rawNf1)||0) + (Number(rawNf2)||0) + (Number(rawNf3)||0) + (Number(rawNs1)||0) + (Number(rawNs2)||0) + (Number(rawNs3)||0);
+            let diff = sum - (Number(data.currentStockRef)||0);
+            countedDetailMap[data.productId] = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: diff, f1: rawNf1, f2: rawNf2, f3: rawNf3, s1: rawNs1, s2: rawNs2, s3: rawNs3, employeeName: employeeName };
+
+            await localforage.setItem('offlineQueue', offlineQueue);
+            updateQueueBadge(); cancelForm();
+            const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
+            Toast.fire({icon: 'success', title: `บันทึกเรียบร้อย (${offlineQueue.length})`});
+            syncBatchData();
+            
+        } else {
+            // ส่งตรงเข้า Google Sheets เลย ไม่ผ่านคิว Firebase
+            let eF = [], eS = [];
+            if (prevVerifyIdx > -1) {
+                let ex = verifyListRaw[prevVerifyIdx];
+                [ex.f1, ex.f2, ex.f3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
+                [ex.s1, ex.s2, ex.s3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
+            }
+            [rawNf1, rawNf2, rawNf3].forEach(v => { if(v !== "" && v != null) eF.push(Number(v)); });
+            [rawNs1, rawNs2, rawNs3].forEach(v => { if(v !== "" && v != null) eS.push(Number(v)); });
+
+            const assignSlots = (arr) => { let s1 = arr[0] !== undefined ? arr[0] : ""; let s2 = arr[1] !== undefined ? arr[1] : ""; let s3 = arr[2] !== undefined ? arr[2] : ""; if (arr.length > 3) s3 = arr.slice(2).reduce((sum, val) => sum + val, 0); return [s1, s2, s3]; };
+            let [mf1, mf2, mf3] = assignSlots(eF);
+            let [ms1, ms2, ms3] = assignSlots(eS);
+            
+            let mSum = (Number(mf1)||0) + (Number(mf2)||0) + (Number(mf3)||0) + (Number(ms1)||0) + (Number(ms2)||0) + (Number(ms3)||0);
+            let mDiff = mSum - (Number(data.currentStockRef)||0);
+
+            let mergedData = { id: data.productId, name: data.productName, stock: data.currentStockRef, diff: mDiff, f1: mf1, f2: mf2, f3: mf3, s1: ms1, s2: ms2, s3: ms3, employeeName: employeeName };
+            
+            showLoading("กำลังบันทึกนับซ้ำ...");
+            fetch(GAS_API_URL + "?action=saveVerifyDirect", {
+                method: 'POST',
+                body: JSON.stringify(mergedData)
+            }).then(r => r.json()).then(res => {
+                hideLoading();
+                if(res.success) {
+                    uniqueVerifyIds.add(data.productId);
+                    if(prevVerifyIdx > -1) verifyListRaw[prevVerifyIdx] = mergedData; else verifyListRaw.push(mergedData);
+                    
+                    // ป้องกันการค้างในคิวเก่าถ้าเคยมี
+                    offlineQueue = offlineQueue.filter(q => !(q.productId === data.productId && q.isVerify));
+                    localforage.setItem('offlineQueue', offlineQueue);
+                    
+                    Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: 'บันทึกนับซ้ำลงชีตแล้ว', showConfirmButton: false, timer: 1500});
+                    cancelForm();
+                    if(lastActiveTab === 'dashboard') calculateDashboard();
+                } else {
+                    Swal.fire('Error', res.error, 'error');
+                }
+            }).catch(e => {
+                hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error');
+            });
+            return; 
         }
-        updateQueueBadge(); cancelForm(); 
-        const msg = isVerifyMode ? 'บันทึกนับซ้ำแล้ว' : 'บันทึกแล้ว';
-        const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1000});
-        Toast.fire({icon: isVerifyMode?'warning':'success', title: `${msg} (${offlineQueue.length})`});
-        syncBatchData(); 
       }
 
       async function syncBatchData() { 
@@ -519,15 +538,14 @@
         document.getElementById('pStock').innerText = Number(p.stock || 0); document.getElementById('pUnit').innerText = p.unit || "";
         
         let autoMergeAlert = document.getElementById('autoMergeAlert');
-        let empName = localStorage.getItem('stockAppUser');
-        let prevVerify = verifyListRaw.find(v => v.id === p.id && v.employeeName === empName);
-        let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify && q.employeeName === empName);
+        let prevVerify = verifyListRaw.find(v => v.id === p.id);
+        let qVerify = offlineQueue.find(q => q.productId === p.id && q.isVerify);
         
         if (!isFixingVerify && !existingData && (prevVerify || qVerify)) {
             let ev = qVerify ? {f1:qVerify.front1, f2:qVerify.front2, f3:qVerify.front3, s1:qVerify.stock1, s2:qVerify.stock2, s3:qVerify.stock3} : prevVerify;
             let sumF = (Number(ev.f1)||0) + (Number(ev.f2)||0) + (Number(ev.f3)||0);
             let sumS = (Number(ev.s1)||0) + (Number(ev.s2)||0) + (Number(ev.s3)||0);
-            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> คุณนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
+            autoMergeAlert.innerHTML = `<strong><i class="bi bi-info-circle"></i> มีการนับไว้แล้ว (หน้าร้าน: ${sumF}, สต๊อก: ${sumS})</strong><br><span class="text-muted">กรอกจำนวนใหม่ที่เจอในช่อง 1 ได้เลย ระบบจะเรียงต่อคอลัมน์ให้อัตโนมัติ</span>`;
             autoMergeAlert.classList.remove('hidden');
         } else { autoMergeAlert.classList.add('hidden'); }
 
@@ -537,6 +555,19 @@
             document.getElementById('f1').value = v(existingData.f1); document.getElementById('f2').value = v(existingData.f2); document.getElementById('f3').value = v(existingData.f3);
             document.getElementById('s1').value = v(existingData.s1); document.getElementById('s2').value = v(existingData.s2); document.getElementById('s3').value = v(existingData.s3);
         }
+
+        let btnDel = document.getElementById('btnDelete');
+        if (isFixingVerify) {
+            btnDel.style.display = "block";
+            btnDel.onclick = deleteVerifyRecord;
+        } else if (isHist) {
+            btnDel.style.display = "block";
+            btnDel.onclick = deleteCurrentHistory;
+        } else {
+            btnDel.style.display = "none";
+            btnDel.onclick = null;
+        }
+
         calculateTotal(); setTimeout(() => document.getElementById('f1').focus(), 200);
       }
       
@@ -622,7 +653,6 @@
         });
       }
 
-      // 🟢 ตัดกล้อง iOS แบบปลอดภัย
       async function safeStopScanner(keepUI = false) {
         isManualClose = true; 
         if (!isScannerRunning && !isCameraBusy) {
@@ -636,8 +666,6 @@
             if (s && s.getState() === 2) { await s.stop(); }
             try { s.clear(); } catch(e) {}
         } catch(e) { 
-            console.log("Stop Camera Error:", e);
-            // 🟢 iOS Hack: ถ้าปิดไม่ได้ให้ทำลาย Video Tag ทิ้ง
             const video = document.querySelector('#reader video');
             if(video) { video.pause(); video.srcObject = null; }
         } finally { 
@@ -656,54 +684,155 @@
       function renderFilterOptions(list) { const select = document.getElementById('selFilterValue'); const currentVal = select.value; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; list.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; select.appendChild(opt); }); if(list.includes(currentVal)) select.value = currentVal; }
       
       function calculateDashboard() { 
-          const type = document.getElementById('filterType').value; const val = document.getElementById('selFilterValue').value; 
+          const type = document.getElementById('filterType').value; 
+          const val = document.getElementById('selFilterValue').value; 
           savedFilterType = type; savedFilterValue = val;
-          if(!val) { document.getElementById('statTotal').innerText = "0"; document.getElementById('statDone').innerText = "0"; document.getElementById('statVerify').innerText = "0"; document.getElementById('statLeft').innerText = "0"; document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; return; } 
-          const filtered = allProducts.filter(p => { const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); const isZero = (Number(p.stock) === 0); const isNormal = (String(p.status||"").trim() === 'ปกติ'); return matchGroup && ((!isZero) || (isZero && isNormal)); }); dashListLeft = []; dashListDone = []; dashListVerify = []; 
+          
+          if(!val) { 
+              document.getElementById('statTotal').innerText = "0"; document.getElementById('statDone').innerText = "0"; 
+              document.getElementById('statVerify').innerText = "0"; document.getElementById('statLeft').innerText = "0"; 
+              document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; 
+              return; 
+          } 
+          
+          const filtered = allProducts.filter(p => { 
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
+              
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
+              const isZero = (stockVal === 0);
+              
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
+              
+              return matchGroup && (!isZero || isNormal); 
+          }); 
+          
+          dashListLeft = []; dashListDone = []; dashListVerify = []; dashListDiffNotZero = [];
           
           filtered.forEach(p => { 
-              let verifyItem = verifyListRaw.find(v => v.id === p.id);
+              let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id));
               if (verifyItem) {
                   p.diff = verifyItem.diff; dashListVerify.push({...p, ...verifyItem}); 
-              } else if (uniqueCountedIds.has(p.id)) {
+              } else if (uniqueCountedIds.has(String(p.id))) {
                   let cData = countedDetailMap[p.id];
-                  if(cData) { p.diff = cData.diff; dashListDone.push({...p, ...cData}); } else { dashListDone.push(p); }
+                  if(cData) { 
+                      p.diff = cData.diff; 
+                      dashListDone.push({...p, ...cData}); 
+                      if (p.diff !== 0) dashListDiffNotZero.push({...p, ...cData});
+                  } else { dashListDone.push(p); }
               } else { dashListLeft.push(p); }
           }); 
-          document.getElementById('statTotal').innerText = filtered.length; document.getElementById('statDone').innerText = dashListDone.length; document.getElementById('statVerify').innerText = dashListVerify.length; document.getElementById('statLeft').innerText = dashListLeft.length; if(document.getElementById('vVerify').checked) renderDashboardList('verify'); else if(document.getElementById('vDone').checked) renderDashboardList('done'); else renderDashboardList('left'); 
+          
+          document.getElementById('statTotal').innerText = filtered.length; 
+          document.getElementById('statDone').innerText = dashListDone.length; 
+          document.getElementById('statVerify').innerText = dashListVerify.length; 
+          document.getElementById('statLeft').innerText = dashListLeft.length; 
+          
+          if(document.getElementById('vVerify').checked) renderDashboardList('verify'); 
+          else if(document.getElementById('vDone').checked) renderDashboardList('done'); 
+          else if(document.getElementById('vDiffNotZero').checked) renderDashboardList('diffNotZero');
+          else renderDashboardList('left'); 
       }
       
       function renderDashboardList(mode) { 
-          let list = []; if (mode === 'left') list = dashListLeft; else if (mode === 'done') list = dashListDone; else if (mode === 'verify') list = dashListVerify; 
+          let list = []; 
+          if (mode === 'left') list = dashListLeft; 
+          else if (mode === 'done') list = dashListDone; 
+          else if (mode === 'verify') list = dashListVerify; 
+          else if (mode === 'diffNotZero') list = dashListDiffNotZero;
+
           const container = document.getElementById('dashboardListContainer'); container.innerHTML = ''; 
           if(list.length === 0) { container.innerHTML = '<div class="text-center text-muted p-3">ไม่มีรายการ</div>'; return; } 
           list.forEach(p => { 
               let badge = ''; let diffText = '';
-              if (mode === 'done') { badge = `<span class="badge bg-success ms-1">นับแล้ว</span>`; if(p.diff !== undefined) { const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); const sign = p.diff > 0 ? '+' : ''; diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; } } 
-              else if (mode === 'verify') { badge = `<span class="badge bg-warning text-dark ms-1">ตรวจสอบ</span>`; if(p.diff !== undefined) { const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); const sign = p.diff > 0 ? '+' : ''; diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; } } 
+              if (mode === 'done' || mode === 'diffNotZero') { 
+                  badge = mode === 'diffNotZero' ? `<span class="badge bg-primary ms-1">ไม่ตรง</span>` : `<span class="badge bg-success ms-1">นับแล้ว</span>`; 
+                  if(p.diff !== undefined) { 
+                      const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const sign = p.diff > 0 ? '+' : ''; 
+                      diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; 
+                  } 
+              } 
+              else if (mode === 'verify') { 
+                  badge = `<span class="badge bg-warning text-dark ms-1">ตรวจสอบ</span>`; 
+                  if(p.diff !== undefined) { 
+                      const color = p.diff < 0 ? 'text-danger' : (p.diff > 0 ? 'text-success' : 'text-primary'); 
+                      const sign = p.diff > 0 ? '+' : ''; 
+                      diffText = `<span class="${color} fw-bold ms-2" style="font-size:0.9em">(${sign}${p.diff})</span>`; 
+                  } 
+              } 
               const div = document.createElement('a'); div.className = 'list-group-item list-group-item-action'; 
-              div.onclick = () => { if (mode === 'verify') { isFixingVerify = true; openForm(p, false, p.id, p); } else if (mode === 'done') { isFixingVerify = false; openForm(p, false, p.id, p); } else { isFixingVerify = false; openForm(p, false, p.id); } }; 
+              div.onclick = () => { 
+                  if (mode === 'verify') { isFixingVerify = true; openForm(p, false, p.id, p); } 
+                  else if (mode === 'done' || mode === 'diffNotZero') { isFixingVerify = false; openForm(p, false, p.id, p); } 
+                  else { isFixingVerify = false; openForm(p, false, p.id); } 
+              }; 
               div.innerHTML = `<div class="fw-bold text-truncate">${p.name}</div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${p.id}</small><div><span class="badge bg-light text-dark border">${p.stock}</span> ${diffText} ${badge}</div></div>`; container.appendChild(div); 
           }); 
       }
       
       function switchToVerifyTab() { document.getElementById('vVerify').checked = true; renderDashboardList('verify'); }
-      function openExportMenu() { const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); let list = [], typeText = ""; if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); }
+      function openExportMenu() { 
+          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vDiffNotZero').checked ? 'diffNotZero' : (document.getElementById('vLeft').checked ? 'left' : 'done')); 
+          let list = [], typeText = ""; 
+          if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } 
+          else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } 
+          else if(listMode === 'diffNotZero') { list = dashListDiffNotZero; typeText = "รายการผลต่างไม่ตรง"; }
+          else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+
+          Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); 
+      }
       
       function getAllItemsForReport() {
-          const type = document.getElementById('filterType').value; const val = document.getElementById('selFilterValue').value; if (!val) return [];
-          const filteredMasters = allProducts.filter(p => { const matchGroup = (type === 'dept') ? (p.dept === val) : (p.subCode === val); const isZero = (Number(p.stock) === 0); const isNormal = (String(p.status||"").trim() === 'ปกติ'); return matchGroup && ((!isZero) || (isZero && isNormal)); });
+          const type = document.getElementById('filterType').value; 
+          const val = document.getElementById('selFilterValue').value; 
+          if (!val) return [];
+          
+          const filteredMasters = allProducts.filter(p => { 
+              const pDept = String(p.dept || "").trim().toUpperCase();
+              const pSub = String(p.subCode || "").trim().toUpperCase();
+              const vFilter = String(val || "").trim().toUpperCase();
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
+              
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
+              const isZero = (stockVal === 0);
+              
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
+              
+              return matchGroup && (!isZero || isNormal); 
+          });
+          
           return filteredMasters.map(p => {
-              let verifyItem = verifyListRaw.find(v => v.id === p.id); if (verifyItem) { return { ...p, ...verifyItem, status: 'รอตรวจสอบ' }; }
-              if (uniqueCountedIds.has(p.id)) { let cData = countedDetailMap[p.id]; if (cData) return { ...p, ...cData, status: 'นับแล้ว' }; return { ...p, status: 'นับแล้ว' }; }
-              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - Number(p.stock)) };
+              let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id)); 
+              if (verifyItem) { return { ...p, ...verifyItem, status: 'รอตรวจสอบ' }; }
+              
+              if (uniqueCountedIds.has(String(p.id))) { 
+                  let cData = countedDetailMap[p.id]; 
+                  if (cData) return { ...p, ...cData, status: 'นับแล้ว' }; 
+                  return { ...p, status: 'นับแล้ว' }; 
+              }
+              
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim();
+              const stockVal = parseFloat(rawStr) || 0;
+              return { ...p, status: 'ยังไม่นับ', f1:0, f2:0, f3:0, s1:0, s2:0, s3:0, diff: (0 - stockVal) };
           });
       }
 
       function handleExport(mode) { 
           let list = []; let typeText = ""; let filterInfo = { type: document.getElementById('filterType').options[document.getElementById('filterType').selectedIndex].text, value: document.getElementById('selFilterValue').value };
           if (mode === 'all') { list = getAllItemsForReport(); typeText = "รายการทั้งหมด (รวมทุกสถานะ)"; if (list.length === 0) return Swal.fire('แจ้งเตือน', 'กรุณาเลือกเงื่อนไขก่อน (แผนก/รหัสซับ)', 'warning'); printData(list, typeText, filterInfo); return; }
-          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vLeft').checked ? 'left' : 'done'); if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+          const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vDiffNotZero').checked ? 'diffNotZero' : (document.getElementById('vLeft').checked ? 'left' : 'done')); 
+          if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } 
+          else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } 
+          else if(listMode === 'diffNotZero') { list = dashListDiffNotZero; typeText = "รายการผลต่างไม่ตรง"; }
+          else { list = dashListDone; typeText = "รายการนับแล้ว"; } 
+
           if (list.length === 0) return Swal.fire('ไม่มีข้อมูล', '', 'warning');
           
           if (mode === 'sheet') { 
@@ -791,7 +920,9 @@
           let found = allProducts.find(p => p.id === r.id); 
           const mock = { id: r.id, name: r.name, stock: r.currentStock, unit: "", dept: found?found.dept:"", subCode: found?found.subCode:"", status: found?found.status:"" }; 
           openForm(mock, true, r.id, {f1:r.f1, f2:r.f2, f3:r.f3, s1:r.s1, s2:r.s2, s3:r.s3}); 
+          
           document.getElementById('btnDelete').classList.remove('hidden'); 
+          document.getElementById('btnDelete').onclick = deleteCurrentHistory;
       }
       
       function saveSingleUpdate() { 
@@ -827,6 +958,28 @@
           }); 
       }
 
+      function deleteVerifyRecord() {
+          Swal.fire({ title: 'ลบรายการรอตรวจสอบ?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => {
+              if(result.isConfirmed) {
+                  showLoading("ลบ...");
+                  fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" })
+                  .then(r => r.json()).then(async () => {
+                      verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id);
+                      uniqueVerifyIds.delete(currentProduct.id);
+                      dashListVerify = dashListVerify.filter(v => v.id !== currentProduct.id);
+
+                      const empName = localStorage.getItem('stockAppUser');
+                      offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify && q.employeeName === empName));
+                      await localforage.setItem('offlineQueue', offlineQueue);
+
+                      hideLoading(); cancelForm();
+                      calculateDashboard();
+                      Swal.fire({toast:true, position:'top-end', icon:'success', title:'ลบแล้ว', showConfirmButton:false, timer:1500});
+                  }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); });
+              }
+          });
+      }
+
       async function triggerAdminSync() {
           Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => {
               if (result.isConfirmed) {
@@ -834,7 +987,9 @@
                   try {
                       const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow" });
                       const resData = await response.json();
-                      hideLoading(); Swal.fire('สำเร็จ', resData.message || 'เรียบร้อย', 'success'); loadHistory(); 
+                      hideLoading(); 
+                      Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false});
+                      forceSyncData();
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
               }
           });
@@ -843,7 +998,6 @@
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       
-      // 🟢 แก้ไขเรื่องการบันทึกผูกบาร์โค้ด ให้ใช้ SDK ของ Firebase โดยตรง (ไม่ผ่าน Fetch ธรรมดาที่ติด Error Auth)
       async function confirmLinkBarcode(product) { 
           Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { 
               if (result.isConfirmed) { 
@@ -851,7 +1005,6 @@
                   try {
                       const newBcData = { targetMainId: product.id, newBarcode: pendingBarcode, timestamp: new Date().getTime() };
                       
-                      // ใช้ database.ref ของ Firebase SDK โดยตรง (แก้ปัญหาแจ้งเตือนในภาพได้เลย)
                       await database.ref('new_barcodes').push(newBcData);
 
                       let pIdx = allProducts.findIndex(p => p.id === product.id);
