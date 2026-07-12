@@ -252,12 +252,7 @@
       function resetIdleTimer() { localStorage.setItem('lastActiveTime', Date.now()); }
 
       window.onload = async function() {
-        if (window.performance) {
-            const navEntries = window.performance.getEntriesByType("navigation");
-            if (navEntries.length > 0 && navEntries[0].type === "reload") {
-                localforage.removeItem('localStockData'); 
-            }
-        }
+        // นำระบบล้างข้อมูลตอนกดรีเฟรชเบราว์เซอร์ออกไปแล้ว
         offlineQueue = await localforage.getItem('offlineQueue') || [];
 
         const savedUser = localStorage.getItem('stockAppUser');
@@ -278,9 +273,10 @@
         document.body.addEventListener('click', resetIdleTimer);
         document.body.addEventListener('scroll', resetIdleTimer);
         
+        // เช็คการทำงานทุก 5 นาที หากไม่ขยับหน้าจอเกิน 20 นาที (1,200,000 มิลลิวินาที) ค่อยบังคับโหลดฐานข้อมูลหลักใหม่
         setInterval(() => {
             let lastActive = localStorage.getItem('lastActiveTime');
-            if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); } 
+            if (lastActive && (Date.now() - lastActive > 1200000)) { forceSyncData(); } 
         }, 300000);
       };
 
@@ -289,7 +285,8 @@
       document.addEventListener("visibilitychange", function() {
         if (document.visibilityState === 'visible') {
             let lastActive = localStorage.getItem('lastActiveTime');
-            if (lastActive && (Date.now() - lastActive > 1800000)) { forceSyncData(); }
+            // เปลี่ยนเป็น 1200000 (20 นาที)
+            if (lastActive && (Date.now() - lastActive > 1200000)) { forceSyncData(); }
         } else if (document.visibilityState === 'hidden') { 
             if (isScannerRunning) { safeStopScanner(); }
             if (offlineQueue.length > 0) syncBatchData(); 
@@ -319,7 +316,7 @@
         } else {
             try {
                 const t = new Date().getTime();
-                const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow" });
+                const response = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow", cache: "no-store" });
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
@@ -676,7 +673,7 @@
       }
 
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
-      function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.5; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
+      function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
 
       function populateFilterValues() { const type = document.getElementById('filterType').value; const select = document.getElementById('selFilterValue'); document.getElementById('txtFilterSearch').value = ''; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; const values = new Set(); allProducts.forEach(p => { const val = (type === 'dept') ? p.dept : p.subCode; if(val) values.add(val); }); allFilterOptionsData = Array.from(values).sort(); renderFilterOptions(allFilterOptionsData); }
       function filterDropdownOptions() { const txt = document.getElementById('txtFilterSearch').value.toLowerCase(); const filtered = allFilterOptionsData.filter(v => v.toLowerCase().includes(txt)); renderFilterOptions(filtered); }
@@ -985,11 +982,16 @@
               if (result.isConfirmed) {
                   showLoading("กำลังซิงค์ลงชีต...");
                   try {
-                      const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow" });
+                      // เพิ่ม cache: 'no-store' บังคับไม่ให้จำค่าเก่า
+                      const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow", cache: "no-store" });
                       const resData = await response.json();
                       hideLoading(); 
-                      Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false});
-                      forceSyncData();
+                      
+                      // แสดงหน้าสำเร็จค้างไว้ 1.5 วินาที (เพื่อให้ Google Sheets จัดการข้อมูลหลังบ้านเสร็จ)
+                      Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false}).then(() => {
+                          // ค่อยโหลดข้อมูลใหม่
+                          forceSyncData();
+                      });
                   } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); }
               }
           });
