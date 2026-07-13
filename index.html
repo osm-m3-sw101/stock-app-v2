@@ -437,6 +437,10 @@
                 verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id);
                 offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify));
             }
+            
+            // 🟢 เพิ่มบรรทัดนี้: ลบรายการนับปกติที่เคยค้างในคิว (ถ้ามี) ออก เพื่อป้องกันการสร้างรายการซ้ำซ้อนในคิว
+            offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && !q.isVerify));
+
             offlineQueue.push(data);
             rawCountedIds.push(data.productId);
             uniqueCountedIds.add(data.productId);
@@ -764,10 +768,25 @@
               } 
               const div = document.createElement('a'); div.className = 'list-group-item list-group-item-action'; 
               div.onclick = () => { 
-                  if (mode === 'verify') { isFixingVerify = true; openForm(p, false, p.id, p); } 
-                  else if (mode === 'done' || mode === 'diffNotZero') { isFixingVerify = false; openForm(p, false, p.id, p); } 
-                  else { isFixingVerify = false; openForm(p, false, p.id); } 
-              }; 
+                  if (mode === 'verify') { 
+                      isFixingVerify = true; 
+                      openForm(p, false, p.id, p); 
+                  } 
+                  else if (mode === 'done' || mode === 'diffNotZero') { 
+                      isFixingVerify = false; 
+                      // 🟢 ถ้ามี sheetRow ให้บังคับเข้าโหมดแก้ไข (เขียนทับ) ทันที
+                      if (p.sheetRow) {
+                          editRowNumber = p.sheetRow;
+                          openForm(p, true, p.id, p); 
+                      } else {
+                          openForm(p, false, p.id, p); 
+                      }
+                  } 
+                  else { 
+                      isFixingVerify = false; 
+                      openForm(p, false, p.id); 
+                  } 
+              };
               div.innerHTML = `<div class="fw-bold text-truncate">${p.name}</div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${p.id}</small><div><span class="badge bg-light text-dark border">${p.stock}</span> ${diffText} ${badge}</div></div>`; container.appendChild(div); 
           }); 
       }
@@ -923,7 +942,7 @@
       }
       
       function saveSingleUpdate() { 
-          const btn = document.getElementById('btnSave'); btn.disabled = true; showLoading(); 
+          const btn = document.getElementById('btnSave'); btn.disabled = true; showLoading("กำลังบันทึกแก้ไข..."); 
           const data = { productId: currentProduct.id, productName: currentProduct.name, currentStockRef: Number(currentProduct.stock)||0, front1: document.getElementById('f1').value, front2: document.getElementById('f2').value, front3: document.getElementById('f3').value, stock1: document.getElementById('s1').value, stock2: document.getElementById('s2').value, stock3: document.getElementById('s3').value, employeeName: localStorage.getItem('stockAppUser') }; 
           
           fetch(GAS_API_URL + "?action=updateHistory", { 
@@ -932,7 +951,30 @@
               redirect: "follow",
               body: JSON.stringify({ rowNumber: editRowNumber, data: data }) 
           }).then(r => r.json()).then(() => { 
-              hideLoading(); btn.disabled = false; editRowNumber = null; switchTab('history'); 
+              // 🟢 เพิ่ม: อัปเดตข้อมูลในหน่วยความจำทันที ตัวเลขที่แก้จะได้ตรงเลย
+              const sumCount = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
+              const diff = sumCount - data.currentStockRef;
+              if (countedDetailMap[data.productId]) {
+                  countedDetailMap[data.productId].f1 = data.front1;
+                  countedDetailMap[data.productId].f2 = data.front2;
+                  countedDetailMap[data.productId].f3 = data.front3;
+                  countedDetailMap[data.productId].s1 = data.stock1;
+                  countedDetailMap[data.productId].s2 = data.stock2;
+                  countedDetailMap[data.productId].s3 = data.stock3;
+                  countedDetailMap[data.productId].diff = diff;
+              }
+
+              hideLoading(); btn.disabled = false; 
+              let prevTab = lastActiveTab;
+              editRowNumber = null; 
+              
+              // 🟢 ถ้าแก้มาจากหน้า Dashboard ให้กลับไปอัปเดตหน้า Dashboard ทันที
+              if(prevTab === 'dashboard') {
+                  calculateDashboard();
+                  switchTab('dashboard');
+              } else {
+                  switchTab('history'); 
+              }
           }).catch(e => { hideLoading(); btn.disabled = false; Swal.fire('Error', e.message, 'error'); }); 
       }
       
