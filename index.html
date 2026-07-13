@@ -774,7 +774,7 @@
                   } 
                   else if (mode === 'done' || mode === 'diffNotZero') { 
                       isFixingVerify = false; 
-                      // 🟢 ถ้ามี sheetRow ให้บังคับเข้าโหมดแก้ไข (เขียนทับ) ทันที
+                      // สั่งให้เข้าโหมดเขียนทับ (Edit Mode) เมื่อคลิกรายการที่มีประวัติแล้ว
                       if (p.sheetRow) {
                           editRowNumber = p.sheetRow;
                           openForm(p, true, p.id, p); 
@@ -786,7 +786,7 @@
                       isFixingVerify = false; 
                       openForm(p, false, p.id); 
                   } 
-              };
+              }; 
               div.innerHTML = `<div class="fw-bold text-truncate">${p.name}</div><div class="d-flex justify-content-between mt-1"><small class="text-muted">${p.id}</small><div><span class="badge bg-light text-dark border">${p.stock}</span> ${diffText} ${badge}</div></div>`; container.appendChild(div); 
           }); 
       }
@@ -951,7 +951,7 @@
               redirect: "follow",
               body: JSON.stringify({ rowNumber: editRowNumber, data: data }) 
           }).then(r => r.json()).then(() => { 
-              // 🟢 เพิ่ม: อัปเดตข้อมูลในหน่วยความจำทันที ตัวเลขที่แก้จะได้ตรงเลย
+              // อัปเดตข้อมูลตัวเลขในหน่วยความจำทันทีหลังบันทึก
               const sumCount = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
               const diff = sumCount - data.currentStockRef;
               if (countedDetailMap[data.productId]) {
@@ -968,7 +968,6 @@
               let prevTab = lastActiveTab;
               editRowNumber = null; 
               
-              // 🟢 ถ้าแก้มาจากหน้า Dashboard ให้กลับไปอัปเดตหน้า Dashboard ทันที
               if(prevTab === 'dashboard') {
                   calculateDashboard();
                   switchTab('dashboard');
