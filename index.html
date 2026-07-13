@@ -215,7 +215,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwn6B3pw3Gj3b81fRHGkmwpPfKbWDVWuHKeomXAwCSPZy8fXF1db9G0h0sZfwUnzQxF/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzu1qVTVH_0Xk5h5jlEJoJkdxbv7I8Q5cD3zLaQDXBFhOgyF2SBG1Kwzeo-jJde3A5T/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -949,18 +949,14 @@
               method: 'POST', 
               headers: { 'Content-Type': 'text/plain;charset=utf-8' },
               redirect: "follow",
-              body: JSON.stringify({ rowNumber: editRowNumber, data: data }) 
+              // เปลี่ยนมาส่ง productId แทน rowNumber เพื่อกวาดล้างข้อมูลเก่า
+              body: JSON.stringify({ productId: currentProduct.id, data: data }) 
           }).then(r => r.json()).then(() => { 
-              // อัปเดตข้อมูลตัวเลขในหน่วยความจำทันทีหลังบันทึก
               const sumCount = (Number(data.front1)||0) + (Number(data.front2)||0) + (Number(data.front3)||0) + (Number(data.stock1)||0) + (Number(data.stock2)||0) + (Number(data.stock3)||0);
               const diff = sumCount - data.currentStockRef;
               if (countedDetailMap[data.productId]) {
-                  countedDetailMap[data.productId].f1 = data.front1;
-                  countedDetailMap[data.productId].f2 = data.front2;
-                  countedDetailMap[data.productId].f3 = data.front3;
-                  countedDetailMap[data.productId].s1 = data.stock1;
-                  countedDetailMap[data.productId].s2 = data.stock2;
-                  countedDetailMap[data.productId].s3 = data.stock3;
+                  countedDetailMap[data.productId].f1 = data.front1; countedDetailMap[data.productId].f2 = data.front2; countedDetailMap[data.productId].f3 = data.front3;
+                  countedDetailMap[data.productId].s1 = data.stock1; countedDetailMap[data.productId].s2 = data.stock2; countedDetailMap[data.productId].s3 = data.stock3;
                   countedDetailMap[data.productId].diff = diff;
               }
 
@@ -968,29 +964,29 @@
               let prevTab = lastActiveTab;
               editRowNumber = null; 
               
-              if(prevTab === 'dashboard') {
-                  calculateDashboard();
-                  switchTab('dashboard');
-              } else {
-                  switchTab('history'); 
-              }
+              if(prevTab === 'dashboard') { calculateDashboard(); switchTab('dashboard'); } else { switchTab('history'); }
           }).catch(e => { hideLoading(); btn.disabled = false; Swal.fire('Error', e.message, 'error'); }); 
       }
       
       function deleteCurrentHistory() { 
-          if (!editRowNumber) return; 
-          Swal.fire({ title: 'ลบรายการนี้?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { 
+          Swal.fire({ title: 'ลบรายการนี้?', text: 'ลบประวัติของสินค้านี้ทั้งหมด กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { 
               if(result.isConfirmed) { 
                   showLoading("ลบ..."); 
                   fetch(GAS_API_URL + "?action=deleteHistory", { 
                       method: 'POST', 
                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                       redirect: "follow",
-                      body: JSON.stringify({ rowNumber: editRowNumber }) 
+                      // เปลี่ยนมาส่ง productId แทน rowNumber
+                      body: JSON.stringify({ productId: currentProduct.id }) 
                   }).then(r => r.json()).then(() => { 
-                      const index = rawCountedIds.indexOf(currentProduct.id); if (index > -1) rawCountedIds.splice(index, 1); 
+                      // ล้างข้อมูลใน UI ทันที
+                      rawCountedIds = rawCountedIds.filter(id => id !== currentProduct.id);
                       if (!rawCountedIds.includes(currentProduct.id)) uniqueCountedIds.delete(currentProduct.id); 
-                      hideLoading(); editRowNumber = null; loadHistory(); switchTab('history'); 
+                      delete countedDetailMap[currentProduct.id];
+
+                      hideLoading(); editRowNumber = null; 
+                      
+                      if(lastActiveTab === 'dashboard') { calculateDashboard(); switchTab('dashboard'); } else { loadHistory(); switchTab('history'); }
                   }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); }); 
               } 
           }); 
