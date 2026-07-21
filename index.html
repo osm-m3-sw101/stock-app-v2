@@ -320,17 +320,35 @@
               }
           });
 
-          const ackRef = database.ref('sync_ack');
-          ackRef.on('child_added', (snapshot) => {
+          // ดักฟังการถูกลบจาก Firebase โดยตรง (เมื่อหลังบ้านดึงไปลงชีต ข้อมูลจะถูกลบออก)
+          const scansRef = database.ref('scans');
+          scansRef.on('child_removed', (snapshot) => {
               const qId = snapshot.key;
               const origLen = offlineQueue.length;
               offlineQueue = offlineQueue.filter(q => q.qId !== qId);
               if(offlineQueue.length < origLen) {
                   localforage.setItem('offlineQueue', offlineQueue);
                   updateQueueBadge();
-                  database.ref('sync_ack/' + qId).remove();
               }
           });
+      }
+
+      // ฟังก์ชันสำหรับเช็กและล้างคิวที่ค้างอยู่ในเครื่อง
+      async function cleanupOfflineQueue() {
+          try {
+              const res = await fetch("https://stockpro-88a22-default-rtdb.asia-southeast1.firebasedatabase.app/scans.json");
+              const fbData = await res.json() || {};
+              const fbKeys = Object.keys(fbData);
+              
+              const origLen = offlineQueue.length;
+              // เก็บเฉพาะคิวที่ยังไม่ได้ส่ง หรือส่งไปแล้วแต่ยังค้างอยู่ใน Firebase จริงๆ
+              offlineQueue = offlineQueue.filter(q => !q.isSentToFB || fbKeys.includes(q.qId));
+              
+              if(offlineQueue.length < origLen) {
+                  await localforage.setItem('offlineQueue', offlineQueue);
+                  updateQueueBadge();
+              }
+          } catch(e) {}
       }
 
       function login() { 
@@ -468,9 +486,13 @@
               document.getElementById('btnAdminDups').classList.add('hidden');
           }
 
+      // ... โค้ดเดิมด้านบน ...
+          
           hideLoading(); 
           if(isFirstLogin) switchTab('scan');
           else if(lastActiveTab === 'dashboard') calculateDashboard();
+          
+          cleanupOfflineQueue(); // <-- เพิ่มบรรทัดนี้เข้าไปล่างสุด
       }
 
       function switchTab(tab) {
