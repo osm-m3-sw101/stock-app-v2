@@ -238,7 +238,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzx_WLsgsl6IJrW5ujBQQys8sgFFbiYNZYyzwFqQwSSK2MKDXPVWzSdASgrN_mqhkFz/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzfKEzkEF3BzPIi2QMFPFCpbPuyva_ZCwmVKefP39W2_2eJxPbSZar808n84t0SuVYj/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -507,47 +507,69 @@
           document.getElementById('viewDuplicates').classList.remove('hidden');
           
           const list = document.getElementById('duplicateList');
-          list.innerHTML = '';
+          // สร้างปุ่มเลือกทั้งหมด และปุ่มลบ
+          list.innerHTML = `
+              <div class="d-flex justify-content-between align-items-center mb-2 px-2 bg-light p-2 rounded border">
+                  <div>
+                      <input class="form-check-input me-1" type="checkbox" id="selectAllDups" onchange="toggleAllDups(this)" style="transform: scale(1.2);">
+                      <label class="form-check-label fw-bold text-dark" for="selectAllDups" style="cursor:pointer;">เลือกทั้งหมด</label>
+                  </div>
+                  <button class="btn btn-danger btn-sm fw-bold shadow-sm" onclick="deleteSelectedDuplicates()">
+                      <i class="bi bi-trash"></i> ลบรายการที่เลือก
+                  </button>
+              </div>
+          `;
           
           duplicateItems.sort((a,b) => a.id.localeCompare(b.id)).forEach(item => {
               const div = document.createElement('div');
               div.className = 'list-group-item d-flex justify-content-between align-items-center mb-1 border rounded';
               
-              // สร้างส่วนข้อความ
               const textDiv = document.createElement('div');
+              textDiv.className = 'd-flex align-items-center w-100';
+              // ใส่ Checkbox ด้านหน้า และทำให้คลิกที่ข้อความแล้วติ๊กถูกได้เลย
               textDiv.innerHTML = `
-                  <div class="fw-bold">${item.id}</div>
-                  <div class="small text-muted text-truncate" style="max-width: 200px;">${item.name}</div>
-                  <div class="small text-danger">บรรทัดที่: ${item.row} | สต๊อก: ${item.stock}</div>
+                  <input class="form-check-input me-3 dup-checkbox" type="checkbox" value="${item.row}" style="transform: scale(1.4);">
+                  <div class="flex-grow-1" onclick="this.previousElementSibling.click()" style="cursor:pointer;">
+                      <div class="fw-bold">${item.id}</div>
+                      <div class="small text-muted text-truncate" style="max-width: 250px;">${item.name}</div>
+                      <div class="small text-danger">บรรทัดที่: ${item.row} | สต๊อก: ${item.stock}</div>
+                  </div>
               `;
               
-              // สร้างปุ่มแยกต่างหาก เพื่อป้องกันปัญหาเครื่องหมาย " หรือ ' ในชื่อสินค้า
-              const btn = document.createElement('button');
-              btn.className = 'btn btn-danger btn-sm';
-              btn.innerText = 'ลบ';
-              btn.onclick = function() { 
-                  deleteDuplicate(item.id, item.name, item.row); 
-              };
-              
               div.appendChild(textDiv);
-              div.appendChild(btn);
               list.appendChild(div);
           });
       }
 
-      function deleteDuplicate(id, name, row) {
+      // ฟังก์ชันติ๊กเลือกทั้งหมด
+      function toggleAllDups(source) {
+          const checkboxes = document.querySelectorAll('.dup-checkbox');
+          checkboxes.forEach(cb => cb.checked = source.checked);
+      }
+
+      // ฟังก์ชันดึงรายการที่ติ๊กแล้วส่งไปลบ
+      function deleteSelectedDuplicates() {
+          const checkboxes = document.querySelectorAll('.dup-checkbox:checked');
+          if (checkboxes.length === 0) {
+              Swal.fire('แจ้งเตือน', 'กรุณาติ๊กเลือกรายการที่ต้องการลบก่อน', 'warning');
+              return;
+          }
+
+          const rowsToDelete = [];
+          checkboxes.forEach(cb => rowsToDelete.push(Number(cb.value)));
+
           Swal.fire({
-              title: '⚠️ ยืนยันการลบข้อมูล?',
-              html: `รหัสสินค้า: <b>${id}</b><br>ชื่อสินค้า: <b>${name}</b><br>(บรรทัดที่ ${row})<br><span class="text-danger mt-2 d-block">หากลบแล้วจะไม่สามารถกู้คืนได้</span>`,
+              title: '⚠️ ยืนยันการลบแบบกลุ่ม?',
+              html: `คุณกำลังจะลบรายการที่ซ้ำซ้อนจำนวน <b>${rowsToDelete.length}</b> รายการ<br><span class="text-danger mt-2 d-block">หากลบแล้วจะไม่สามารถกู้คืนได้</span>`,
               icon: 'warning',
               showCancelButton: true,
               confirmButtonColor: '#dc3545',
-              confirmButtonText: 'ลบทิ้ง'
+              confirmButtonText: 'ลบทิ้งทั้งหมด'
           }).then((res) => {
               if(res.isConfirmed) {
-                  showLoading("กำลังลบ...");
-                  fetch(GAS_API_URL + "?action=deleteDuplicateRow", {
-                      method: 'POST', body: JSON.stringify({rowNumber: row})
+                  showLoading("กำลังลบข้อมูล...");
+                  fetch(GAS_API_URL + "?action=deleteDuplicateRows", {
+                      method: 'POST', body: JSON.stringify({ rows: rowsToDelete })
                   }).then(r=>r.json()).then(data=>{
                       hideLoading();
                       if(data.success) {
@@ -558,7 +580,6 @@
               }
           });
       }
-
       async function saveData(isVerifyMode) {
         if (editRowNumber) { saveSingleUpdate(); return; }
         let employeeName = localStorage.getItem('stockAppUser');
