@@ -55,6 +55,11 @@
     </style>
   </head>
   <body>
+    <!-- แจ้งเตือน Realtime อัปเดตข้อมูล -->
+    <div id="updateBanner" class="hidden alert alert-success position-fixed shadow-lg" style="top: 15px; left: 50%; transform: translateX(-50%); z-index: 10500; cursor: pointer; border-radius: 30px; font-weight: bold; width: 90%; max-width: 400px; text-align: center;" onclick="forceSyncData(); this.classList.add('hidden');">
+        <i class="bi bi-arrow-clockwise"></i> มีข้อมูลอัปเดตใหม่! กดเพื่อโหลด
+    </div>
+
     <div id="loadingOverlay" class="hidden"><div class="spinner-border text-primary"></div><div class="mt-2 fw-bold text-dark" id="loadingText">กำลังทำงาน...</div></div>
 
     <div id="loginSection" class="container mt-5 hidden">
@@ -184,9 +189,9 @@
                     <div class="col-4"><select id="filterType" class="form-select form-select-sm" onchange="populateFilterValues()"><option value="dept">แผนก</option><option value="subCode">รหัสซับ</option></select></div>
                     <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="debouncedFilterOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
                     <div class="col-12"><select id="selFilterValue" class="form-select" onchange="calculateDashboard()"><option value="">-- เลือกรายการ --</option></select></div>
-                    <!-- ช่องสำหรับกรองจำนวนสต๊อก -->
+                    <!-- ช่องกรองจำนวนสต๊อก (ฟีเจอร์ใหม่) -->
                     <div class="col-12">
-                        <input type="number" id="filterStockQty" class="form-control form-control-sm text-center text-primary fw-bold" placeholder="กรองเฉพาะจำนวนสต๊อก (เช่น 0, 1) เว้นว่างเพื่อดูทั้งหมด" oninput="calculateDashboard()">
+                        <input type="number" id="filterStockQty" class="form-control form-control-sm text-center text-primary fw-bold" placeholder="กรองเฉพาะจำนวนสต๊อก (เช่น 0, 1, 2) เว้นว่างเพื่อดูทั้งหมด" oninput="calculateDashboard()">
                     </div>
                 </div>
             </div>
@@ -240,7 +245,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzfKEzkEF3BzPIi2QMFPFCpbPuyva_ZCwmVKefP39W2_2eJxPbSZar808n84t0SuVYj/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxbu6LU2dYZD7F_QnSXWNWPKotKjCWcotxtsS5DKXQh02zaAmgytl8cr-2mTeGjKDMq/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -268,11 +273,10 @@
       let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
       let offlineQueue = [];
       let isSyncing = false; 
+      let initialLoadTime = Date.now();
       
       let pendingLoginName = "";
       let pendingLoginPin = "";
-      let lastKnownStampTime = null;
-      let lastKnownDynamicTime = null;
 
       function getScanner() { if (!html5QrcodeScannerObj) html5QrcodeScannerObj = new Html5Qrcode("reader"); return html5QrcodeScannerObj; }
       function resetIdleTimer() { localStorage.setItem('lastActiveTime', Date.now()); }
@@ -317,51 +321,14 @@
       };
 
       function setupFirebaseListeners() {
-          // ฟังการเปลี่ยนตราประทับของสต๊อกหลัก (17000 รายการ)
           const systemRef = database.ref('system/lastUpdated');
           systemRef.on('value', (snapshot) => {
               const updatedTime = snapshot.val();
-              if (!updatedTime) return;
-
-              if (lastKnownStampTime === null) {
-                  lastKnownStampTime = updatedTime;
-                  return;
-              }
-
-              if (updatedTime !== lastKnownStampTime) {
-                  lastKnownStampTime = updatedTime;
-                  Swal.fire({
-                      title: 'อัปเดตสต๊อกหลัก!',
-                      text: 'Admin ได้ประทับตราอัปเดตสต๊อกล่าสุดแล้ว กรุณากดปุ่มเพื่อดึงข้อมูลใหม่ให้ตรงกัน',
-                      icon: 'warning',
-                      confirmButtonText: '<i class="bi bi-cloud-arrow-down"></i> โหลดสต๊อกใหม่',
-                      allowOutsideClick: false,
-                      allowEscapeKey: false
-                  }).then((result) => {
-                      if (result.isConfirmed) { forceSyncData(); }
-                  });
+              if(updatedTime && updatedTime > initialLoadTime + 5000) { 
+                  document.getElementById('updateBanner').classList.remove('hidden');
               }
           });
 
-          // ฟังการอัปเดตข้อมูลไดนามิก (เช่น คนอื่นกวาดลงชีต) -> ให้แอปโหลดอัปเดตแบบเบื้องหลังเงียบๆ
-          const dynamicRef = database.ref('system/dynamicUpdated');
-          dynamicRef.on('value', (snapshot) => {
-              const dynTime = snapshot.val();
-              if (!dynTime) return;
-
-              if (lastKnownDynamicTime === null) {
-                  lastKnownDynamicTime = dynTime;
-                  return;
-              }
-
-              if (dynTime !== lastKnownDynamicTime) {
-                  lastKnownDynamicTime = dynTime;
-                  // โหลดแบบเงียบๆ ไม่เด้งบังหน้าจอ
-                  fetchDynamicData(false);
-              }
-          });
-
-          // ฟังการเคลียร์คิว scans เพื่อให้คำว่า "รอชีตบันทึก" หายไปเอง Real-time
           const scansRef = database.ref('scans');
           scansRef.on('child_removed', (snapshot) => {
               const qId = snapshot.key;
@@ -404,7 +371,7 @@
       function stampStockUpdate() {
           Swal.fire({
               title: 'ประทับตราอัปเดตสต๊อก?',
-              text: 'ระบบจะแจ้งเตือนให้พนักงานทุกคนดาวน์โหลดสต๊อกใหม่ล่าสุด (ควรทำหลังจากลบรายการซ้ำเรียบร้อยแล้ว)',
+              text: 'ระบบจะแจ้งเตือนให้พนักงานทุกคนดาวน์โหลดสต๊อกใหม่ล่าสุด (ควรทำหลังจากตรวจสอบและลบรายการซ้ำเรียบร้อยแล้ว)',
               icon: 'info',
               showCancelButton: true,
               confirmButtonColor: '#198754',
@@ -462,7 +429,7 @@
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
       async function syncData(isFirstLogin) {
-        if(isFirstLogin) showLoading("กำลังตรวจสอบการอัปเดต...");
+        showLoading("กำลังตรวจสอบการอัปเดต...");
         const cachedProducts = await localforage.getItem('localStockData'); 
         let cachedDuplicates = await localforage.getItem('duplicateItems');
         if(!cachedDuplicates) cachedDuplicates = [];
@@ -494,6 +461,7 @@
             } else {
                 allProducts = typeof cachedProducts === 'string' ? JSON.parse(cachedProducts) : cachedProducts;
                 duplicateItems = cachedDuplicates;
+                
                 dynData.duplicates = duplicateItems; 
                 processServerData(dynData, isFirstLogin);
             }
@@ -517,18 +485,9 @@
           await localforage.removeItem('duplicateItems'); 
           localStorage.removeItem('localStockStamp'); 
           localStorage.setItem('lastActiveTime', Date.now()); 
+          initialLoadTime = Date.now(); 
           await syncData(false); 
           Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ดึงข้อมูลล่าสุดเรียบร้อย', showConfirmButton: false, timer: 1500 });
-      }
-
-      async function fetchDynamicData(isFirstLogin) {
-          try {
-              const t = new Date().getTime();
-              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow" });
-              const data = await response.json();
-              if (data.error) throw new Error(data.error);
-              processServerData(data, isFirstLogin);
-          } catch(e) { }
       }
 
       function processServerData(data, isFirstLogin) {
@@ -866,11 +825,10 @@
       function handleFilterKey(e) { if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); const txt = document.getElementById('txtFilterSearch').value.toLowerCase().trim(); let match = allFilterOptionsData.find(v => v.toLowerCase() === txt); if (!match) match = allFilterOptionsData.find(v => v.toLowerCase().includes(txt)); if (match) { document.getElementById('selFilterValue').value = match; calculateDashboard(); document.activeElement.blur(); } } }
       function renderFilterOptions(list) { const select = document.getElementById('selFilterValue'); const currentVal = select.value; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; list.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; select.appendChild(opt); }); if(list.includes(currentVal)) select.value = currentVal; }
       
-      // ฟังก์ชันคำนวณแดชบอร์ด + ระบบกรองสต๊อกใหม่
       function calculateDashboard() { 
           const type = document.getElementById('filterType').value; 
           const val = document.getElementById('selFilterValue').value; 
-          const stockFilterVal = document.getElementById('filterStockQty').value.trim();
+          const stockFilterVal = document.getElementById('filterStockQty').value.trim(); // ดึงค่าจากช่องกรองสต๊อก
 
           savedFilterType = type; savedFilterValue = val;
           
@@ -895,11 +853,13 @@
               const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
               const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
               
+              // ลอจิกการกรองตามจำนวนสต๊อกที่ระบุ
               let matchStock = true;
               if (stockFilterVal !== "") {
                   matchStock = (stockVal === parseFloat(stockFilterVal));
               }
 
+              // ถ้ามีการระบุตัวเลขสต๊อกชัดเจน (เช่น ผู้ใช้จงใจพิมพ์ 0) ให้โชว์สินค้านั้นเลย โดยข้ามเงื่อนไขซ่อนสต๊อก 0 ปกติไป
               if (stockFilterVal !== "") {
                   return matchGroup && matchStock;
               } else {
@@ -952,7 +912,7 @@
       function deleteCurrentHistory() { Swal.fire({ title: 'ลบรายการนี้?', text: 'ลบประวัติของสินค้านี้ทั้งหมด กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { if(result.isConfirmed) { showLoading("ลบ..."); fetch(GAS_API_URL + "?action=deleteHistory", { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: "follow", body: JSON.stringify({ productId: currentProduct.id }) }).then(r => r.json()).then(() => { rawCountedIds = rawCountedIds.filter(id => id !== currentProduct.id); if (!rawCountedIds.includes(currentProduct.id)) uniqueCountedIds.delete(currentProduct.id); delete countedDetailMap[currentProduct.id]; hideLoading(); editRowNumber = null; if(lastActiveTab === 'dashboard') { calculateDashboard(); switchTab('dashboard'); } else { loadHistory(); switchTab('history'); } }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); }); } }); }
       function deleteVerifyRecord() { Swal.fire({ title: 'ลบรายการรอตรวจสอบ?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { if(result.isConfirmed) { showLoading("ลบ..."); fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }).then(r => r.json()).then(async () => { verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id); uniqueVerifyIds.delete(currentProduct.id); dashListVerify = dashListVerify.filter(v => v.id !== currentProduct.id); const empName = localStorage.getItem('stockAppUser'); offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify && q.employeeName === empName)); await localforage.setItem('offlineQueue', offlineQueue); hideLoading(); cancelForm(); calculateDashboard(); Swal.fire({toast:true, position:'top-end', icon:'success', title:'ลบแล้ว', showConfirmButton:false, timer:1500}); }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); }); } }); }
       
-      async function triggerAdminSync() { Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => { if (result.isConfirmed) { showLoading("กำลังซิงค์ลงชีต..."); try { const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow", cache: "no-store" }); const resData = await response.json(); hideLoading(); Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false}); } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); } } }); }
+      async function triggerAdminSync() { Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => { if (result.isConfirmed) { showLoading("กำลังซิงค์ลงชีต..."); try { const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow", cache: "no-store" }); const resData = await response.json(); hideLoading(); Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false}).then(() => { forceSyncData(); }); } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); } } }); }
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       async function confirmLinkBarcode(product) { Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { if (result.isConfirmed) { showLoading("บันทึก..."); try { const newBcData = { targetMainId: product.id, newBarcode: pendingBarcode, timestamp: new Date().getTime() }; await database.ref('new_barcodes').push(newBcData); let pIdx = allProducts.findIndex(p => p.id === product.id); if(pIdx > -1) { allProducts[pIdx].allIds += " " + pendingBarcode.toLowerCase(); await localforage.setItem('localStockData', allProducts); } hideLoading(); isScanProcessing = false; isLinkMode = false; safeStopScanner(); const savedCode = pendingBarcode; pendingBarcode=""; document.getElementById('linkModeBar').classList.add('hidden'); document.getElementById('searchInput').value = ''; openForm(product, false, savedCode); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ผูกรหัสแล้ว (รอซิงค์ลงชีต)', showConfirmButton: false, timer: 1500 }); } catch (err) { hideLoading(); Swal.fire('Error', err.message, 'error'); } } }); }
