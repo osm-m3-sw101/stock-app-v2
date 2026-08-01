@@ -189,6 +189,10 @@
                     <div class="col-4"><select id="filterType" class="form-select form-select-sm" onchange="populateFilterValues()"><option value="dept">แผนก</option><option value="subCode">รหัสซับ</option></select></div>
                     <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="debouncedFilterOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
                     <div class="col-12"><select id="selFilterValue" class="form-select" onchange="calculateDashboard()"><option value="">-- เลือกรายการ --</option></select></div>
+                    <!-- ช่องกรองจำนวนสต๊อก (ฟีเจอร์ใหม่) -->
+                    <div class="col-12">
+                        <input type="number" id="filterStockQty" class="form-control form-control-sm text-center text-primary fw-bold" placeholder="กรองเฉพาะจำนวนสต๊อก (เช่น 0, 1, 2) เว้นว่างเพื่อดูทั้งหมด" oninput="calculateDashboard()">
+                    </div>
                 </div>
             </div>
             <div class="row g-2 mb-3">
@@ -824,13 +828,69 @@
       function calculateDashboard() { 
           const type = document.getElementById('filterType').value; 
           const val = document.getElementById('selFilterValue').value; 
+          const stockFilterVal = document.getElementById('filterStockQty').value.trim(); // ดึงค่าจากช่องกรองสต๊อก
+
           savedFilterType = type; savedFilterValue = val;
-          if(!val) { document.getElementById('statTotal').innerText = "0"; document.getElementById('statDone').innerText = "0"; document.getElementById('statVerify').innerText = "0"; document.getElementById('statLeft').innerText = "0"; document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; return; } 
-          const filtered = allProducts.filter(p => { const pDept = String(p.dept || "").trim().toUpperCase(); const pSub = String(p.subCode || "").trim().toUpperCase(); const vFilter = String(val || "").trim().toUpperCase(); const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim(); const stockVal = parseFloat(rawStr) || 0; const isZero = (stockVal === 0); const statusText = String(p.status || "").replace(/[\s'"]/g, ''); const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; return matchGroup && (!isZero || isNormal); }); 
+          
+          if(!val) { 
+              document.getElementById('statTotal').innerText = "0"; 
+              document.getElementById('statDone').innerText = "0"; 
+              document.getElementById('statVerify').innerText = "0"; 
+              document.getElementById('statLeft').innerText = "0"; 
+              document.getElementById('dashboardListContainer').innerHTML = '<div class="text-center text-muted p-3">กรุณาเลือกเงื่อนไข...</div>'; 
+              return; 
+          } 
+          
+          const filtered = allProducts.filter(p => { 
+              const pDept = String(p.dept || "").trim().toUpperCase(); 
+              const pSub = String(p.subCode || "").trim().toUpperCase(); 
+              const vFilter = String(val || "").trim().toUpperCase(); 
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
+              
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim(); 
+              const stockVal = parseFloat(rawStr) || 0; 
+              const isZero = (stockVal === 0); 
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
+              
+              // ลอจิกการกรองตามจำนวนสต๊อกที่ระบุ
+              let matchStock = true;
+              if (stockFilterVal !== "") {
+                  matchStock = (stockVal === parseFloat(stockFilterVal));
+              }
+
+              // ถ้ามีการระบุตัวเลขสต๊อกชัดเจน (เช่น ผู้ใช้จงใจพิมพ์ 0) ให้โชว์สินค้านั้นเลย โดยข้ามเงื่อนไขซ่อนสต๊อก 0 ปกติไป
+              if (stockFilterVal !== "") {
+                  return matchGroup && matchStock;
+              } else {
+                  return matchGroup && (!isZero || isNormal); 
+              }
+          }); 
+          
           dashListLeft = []; dashListDone = []; dashListVerify = []; dashListDiffNotZero = [];
-          filtered.forEach(p => { let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id)); if (verifyItem) { p.diff = verifyItem.diff; dashListVerify.push({...p, ...verifyItem}); } else if (uniqueCountedIds.has(String(p.id))) { let cData = countedDetailMap[p.id]; if(cData) { p.diff = cData.diff; dashListDone.push({...p, ...cData}); if (p.diff !== 0) dashListDiffNotZero.push({...p, ...cData}); } else { dashListDone.push(p); } } else { dashListLeft.push(p); } }); 
-          document.getElementById('statTotal').innerText = filtered.length; document.getElementById('statDone').innerText = dashListDone.length; document.getElementById('statVerify').innerText = dashListVerify.length; document.getElementById('statLeft').innerText = dashListLeft.length; 
-          if(document.getElementById('vVerify').checked) renderDashboardList('verify'); else if(document.getElementById('vDone').checked) renderDashboardList('done'); else if(document.getElementById('vDiffNotZero').checked) renderDashboardList('diffNotZero'); else renderDashboardList('left'); 
+          
+          filtered.forEach(p => { 
+              let verifyItem = verifyListRaw.find(v => String(v.id) === String(p.id)); 
+              if (verifyItem) { 
+                  p.diff = verifyItem.diff; dashListVerify.push({...p, ...verifyItem}); 
+              } else if (uniqueCountedIds.has(String(p.id))) { 
+                  let cData = countedDetailMap[p.id]; 
+                  if(cData) { 
+                      p.diff = cData.diff; dashListDone.push({...p, ...cData}); 
+                      if (p.diff !== 0) dashListDiffNotZero.push({...p, ...cData}); 
+                  } else { dashListDone.push(p); } 
+              } else { dashListLeft.push(p); } 
+          }); 
+          
+          document.getElementById('statTotal').innerText = filtered.length; 
+          document.getElementById('statDone').innerText = dashListDone.length; 
+          document.getElementById('statVerify').innerText = dashListVerify.length; 
+          document.getElementById('statLeft').innerText = dashListLeft.length; 
+          
+          if(document.getElementById('vVerify').checked) renderDashboardList('verify'); 
+          else if(document.getElementById('vDone').checked) renderDashboardList('done'); 
+          else if(document.getElementById('vDiffNotZero').checked) renderDashboardList('diffNotZero'); 
+          else renderDashboardList('left'); 
       }
       
       function renderDashboardList(mode) { 
