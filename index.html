@@ -55,7 +55,6 @@
     </style>
   </head>
   <body>
-    <!-- แจ้งเตือน Realtime อัปเดตข้อมูล -->
     <div id="updateBanner" class="hidden alert alert-success position-fixed shadow-lg" style="top: 15px; left: 50%; transform: translateX(-50%); z-index: 10500; cursor: pointer; border-radius: 30px; font-weight: bold; width: 90%; max-width: 400px; text-align: center;" onclick="forceSyncData(); this.classList.add('hidden');">
         <i class="bi bi-arrow-clockwise"></i> มีข้อมูลอัปเดตใหม่! กดเพื่อโหลด
     </div>
@@ -76,7 +75,6 @@
         <div class="d-flex justify-content-between align-items-center mb-2 pt-2">
             <div><i class="bi bi-person-circle text-primary"></i> <span id="displayName" class="fw-bold text-dark"></span></div>
             <div class="d-flex align-items-center">
-                <!-- ปุ่ม Admin -->
                 <button id="btnStampUpdate" class="btn btn-sm btn-success hidden me-2 fw-bold" onclick="stampStockUpdate()" title="ประทับตรายืนยันสต๊อก"><i class="bi bi-patch-check"></i> ประทับตรา</button>
                 <button id="btnAdminDups" class="btn btn-sm btn-danger flashing hidden me-2" onclick="showDuplicatesModal()" title="จัดการรายการซ้ำ"><i class="bi bi-exclamation-triangle"></i> ซ้ำ (<span id="dupCount">0</span>)</button>
                 <button id="btnChangePin" class="btn btn-sm btn-outline-secondary me-1 hidden" onclick="showChangePinModal()" title="เปลี่ยนรหัสผ่าน"><i class="bi bi-key"></i></button>
@@ -88,7 +86,6 @@
             </div>
         </div>
 
-        <!-- หน้าดูรายการซ้ำ -->
         <div id="viewDuplicates" class="hidden card p-3 border-danger shadow">
            <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-exclamation-triangle"></i> จัดการรายการสต๊อกซ้ำ</h6>
@@ -185,7 +182,6 @@
         <div id="viewDashboard" class="hidden">
             <h5 class="mb-3 fw-bold"><i class="bi bi-pie-chart"></i> สรุปสถานะ</h5>
             <div class="card p-3 mb-3 bg-light border-0">
-                <!-- เพิ่มฟิลเตอร์กรองสถานะ และ จำนวนสต๊อก -->
                 <div class="row g-2 mb-2">
                     <div class="col-4"><select id="filterType" class="form-select form-select-sm" onchange="populateFilterValues()"><option value="dept">แผนก</option><option value="subCode">รหัสซับ</option></select></div>
                     <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="debouncedFilterOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
@@ -252,7 +248,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzgLHx8m7bvkS16Vaz5UiqIDlOdSXFWojN5WiWL6lG20idg_PaIWF0_wGjH0pSQ7U4D/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxsFPXNW1UqLRSGQLkDoWIsjgXcYYBZ69Z6u124wO6XRj3jIk4764kiueJKPjrennmc/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -280,6 +276,7 @@
       let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
       let offlineQueue = [];
       let isSyncing = false; 
+      let initialLoadTime = Date.now();
       
       let pendingLoginName = "";
       let pendingLoginPin = "";
@@ -407,7 +404,7 @@
       function stampStockUpdate() {
           Swal.fire({
               title: 'ประทับตราอัปเดตสต๊อก?',
-              text: 'ระบบจะแจ้งเตือนให้พนักงานทุกคนดาวน์โหลดสต๊อกใหม่ล่าสุด (ควรทำหลังจากตรวจสอบและลบรายการซ้ำเรียบร้อยแล้ว)',
+              text: 'ระบบจะแจ้งเตือนให้พนักงานทุกคนดาวน์โหลดสต๊อกใหม่ล่าสุด (ควรทำหลังจากลบรายการซ้ำเรียบร้อยแล้ว)',
               icon: 'info',
               showCancelButton: true,
               confirmButtonColor: '#198754',
@@ -464,70 +461,78 @@
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
-      // ==========================================
-      // ฟังก์ชันดึงข้อมูล (แก้ปัญหา Error มือถือ Storage Block)
-      // ==========================================
+      // ========================================================
+      // ระบบโหลดข้อมูล (ปลอดภัยบนมือถือ ตามโครงสร้าง index_3 เดิม)
+      // ========================================================
       async function syncData(isFirstLogin) {
-        if(isFirstLogin) showLoading("กำลังตรวจสอบการอัปเดต...");
-        
-        let cachedProducts = null;
-        let cachedDuplicates = [];
-        try {
-            cachedProducts = await localforage.getItem('localStockData'); 
-            cachedDuplicates = await localforage.getItem('duplicateItems') || [];
-        } catch(storeErr) { console.warn("Local storage disabled"); }
+          if (isFirstLogin) showLoading("โหลดสต๊อก & ตรวจสอบ...");
+          let cachedProducts = null;
+          try {
+              cachedProducts = await localforage.getItem('localStockData');
+          } catch(e) {}
 
-        try {
-            const t = new Date().getTime();
-            const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow", cache: "no-store" });
-            const dynData = await response.json();
-            if (dynData.error) throw new Error(dynData.error);
+          if (cachedProducts && cachedProducts.length > 0) {
+              allProducts = typeof cachedProducts === 'string' ? JSON.parse(cachedProducts) : cachedProducts;
+              await fetchDynamicData(isFirstLogin);
+          } else {
+              await fetchAllDataFromServer(isFirstLogin);
+          }
+      }
 
-            const serverStamp = dynData.stockStamp || "";
-            let localStamp = "";
-            try { localStamp = localStorage.getItem('localStockStamp') || ""; } catch(e){}
+      async function fetchAllDataFromServer(isFirstLogin) {
+          showLoading("กำลังดาวน์โหลดฐานข้อมูลหลัก...");
+          try {
+              const t = new Date().getTime();
+              const resAll = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow", cache: "no-store" });
+              const allData = await resAll.json();
+              if (allData.error) throw new Error(allData.error);
 
-            if (dynData.adminPin) { 
-                try { localStorage.setItem('serverAdminPin', dynData.adminPin); } catch(e){} 
-            }
+              allProducts = allData.products || [];
+              duplicateItems = allData.duplicates || [];
 
-            const isCacheEmpty = !cachedProducts || (Array.isArray(cachedProducts) && cachedProducts.length === 0);
-            const isStampChanged = (serverStamp !== "" && serverStamp !== localStamp);
+              try {
+                  await localforage.setItem('localStockData', allProducts);
+                  await localforage.setItem('duplicateItems', duplicateItems);
+                  localStorage.setItem('localStockStamp', allData.stockStamp || "");
+              } catch(e) {}
 
-            if (isCacheEmpty || isStampChanged) {
-                showLoading("พบการอัปเดตสต๊อกหลัก กำลังดาวน์โหลด...");
-                const resAll = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow", cache: "no-store" });
-                const allData = await resAll.json();
-                if (allData.error) throw new Error(allData.error);
+              if (allData.adminPin) { localStorage.setItem('serverAdminPin', allData.adminPin); }
+              processServerData(allData, isFirstLogin);
+          } catch (err) {
+              hideLoading();
+              Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่', 'error');
+          }
+      }
 
-                allProducts = allData.products || [];
-                duplicateItems = allData.duplicates || [];
-                
-                try {
-                    await localforage.setItem('localStockData', allProducts);
-                    await localforage.setItem('duplicateItems', duplicateItems);
-                    localStorage.setItem('localStockStamp', allData.stockStamp || serverStamp);
-                } catch(storeErr) { console.warn("Failed saving cache", storeErr); }
+      async function fetchDynamicData(isFirstLogin) {
+          try {
+              const t = new Date().getTime();
+              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow", cache: "no-store" });
+              const dynData = await response.json();
+              if (dynData.error) throw new Error(dynData.error);
 
-                processServerData(allData, isFirstLogin);
-            } else {
-                allProducts = typeof cachedProducts === 'string' ? JSON.parse(cachedProducts) : cachedProducts;
-                duplicateItems = cachedDuplicates;
-                dynData.duplicates = duplicateItems; 
-                processServerData(dynData, isFirstLogin);
-            }
-        } catch (err) {
-            hideLoading(); 
-            if(cachedProducts && cachedProducts.length > 0) {
-                allProducts = typeof cachedProducts === 'string' ? JSON.parse(cachedProducts) : cachedProducts;
-                duplicateItems = cachedDuplicates;
-                Swal.fire('ออฟไลน์', 'ทำงานด้วยข้อมูลเดิมในเครื่อง', 'warning');
-                if(isFirstLogin) switchTab('scan');
-                else if(lastActiveTab === 'dashboard') calculateDashboard();
-            } else {
-                Swal.fire('Error', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่', 'error');
-            }
-        }
+              const serverStamp = dynData.stockStamp || "";
+              const localStamp = localStorage.getItem('localStockStamp') || "";
+
+              if (serverStamp !== "" && serverStamp !== localStamp) {
+                  // ถ้าประทับตราไม่ตรง บังคับดึงข้อมูล 17k ใหม่
+                  await fetchAllDataFromServer(isFirstLogin);
+                  return;
+              }
+
+              if (dynData.adminPin) { localStorage.setItem('serverAdminPin', dynData.adminPin); }
+              
+              let cachedDuplicates = [];
+              try { cachedDuplicates = await localforage.getItem('duplicateItems') || []; } catch(e){}
+              dynData.duplicates = cachedDuplicates; 
+
+              processServerData(dynData, isFirstLogin);
+          } catch(err) { 
+              hideLoading();
+              Swal.fire('ออฟไลน์', 'ทำงานด้วยข้อมูลเดิมในเครื่อง', 'warning');
+              if(isFirstLogin) switchTab('scan');
+              else if(lastActiveTab === 'dashboard') calculateDashboard();
+          }
       }
 
       async function forceSyncData() {
@@ -535,22 +540,12 @@
           try {
               await localforage.removeItem('localStockData'); 
               await localforage.removeItem('duplicateItems'); 
-              localStorage.removeItem('localStockStamp'); 
-              localStorage.setItem('lastActiveTime', Date.now()); 
           } catch(e){}
+          localStorage.removeItem('localStockStamp'); 
+          localStorage.setItem('lastActiveTime', Date.now()); 
           initialLoadTime = Date.now(); 
           await syncData(false); 
           Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ดึงข้อมูลล่าสุดเรียบร้อย', showConfirmButton: false, timer: 1500 });
-      }
-
-      async function fetchDynamicData(isFirstLogin) {
-          try {
-              const t = new Date().getTime();
-              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow", cache: "no-store" });
-              const data = await response.json();
-              if (data.error) throw new Error(data.error);
-              processServerData(data, isFirstLogin);
-          } catch(e) { }
       }
 
       function processServerData(data, isFirstLogin) {
@@ -883,9 +878,6 @@
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
       function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
 
-      // =====================================
-      // ฟังก์ชันจัดกลุ่มแผนก
-      // =====================================
       function populateFilterValues() { 
           const type = document.getElementById('filterType').value; 
           const select = document.getElementById('selFilterValue'); 
@@ -935,9 +927,6 @@
           if(list.includes(currentVal)) select.value = currentVal; 
       }
       
-      // =====================================
-      // ฟังก์ชัน Dashboard + กรองสต๊อกและสถานะ
-      // =====================================
       function calculateDashboard() { 
           const type = document.getElementById('filterType').value; 
           const val = document.getElementById('selFilterValue').value; 
@@ -968,14 +957,10 @@
               const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
               
               let matchStock = true;
-              if (stockFilterVal !== "") {
-                  matchStock = (stockVal === parseFloat(stockFilterVal));
-              }
+              if (stockFilterVal !== "") { matchStock = (stockVal === parseFloat(stockFilterVal)); }
 
               let matchStatus = true;
-              if (statusFilterVal === 'normal') {
-                  matchStatus = isNormal;
-              }
+              if (statusFilterVal === 'normal') { matchStatus = isNormal; }
 
               if (stockFilterVal !== "") {
                   return matchGroup && matchStock && matchStatus;
@@ -1047,23 +1032,31 @@
       function openExportMenu() { const listMode = document.getElementById('vVerify').checked ? 'verify' : (document.getElementById('vDiffNotZero').checked ? 'diffNotZero' : (document.getElementById('vLeft').checked ? 'left' : 'done')); let list = [], typeText = ""; if(listMode === 'verify') { list = dashListVerify; typeText = "รายการรอตรวจสอบ"; } else if(listMode === 'left') { list = dashListLeft; typeText = "รายการยังไม่นับ"; } else if(listMode === 'diffNotZero') { list = dashListDiffNotZero; typeText = "รายการผลต่างไม่ตรง"; } else { list = dashListDone; typeText = "รายการนับแล้ว"; } Swal.fire({ title: 'ส่งออกข้อมูล', html: `<div class="text-start mb-3"><strong>${typeText}</strong> (${list.length} รายการ)</div><div class="d-grid gap-2"><button class="btn btn-success" onclick="swal.clickConfirm(); handleExport('sheet')"><i class="bi bi-file-earmark-spreadsheet"></i> ลง Google Sheet</button><button class="btn btn-primary" onclick="swal.clickConfirm(); handleExport('csv')"><i class="bi bi-filetype-csv"></i> ดาวน์โหลด CSV</button><button class="btn btn-secondary" onclick="swal.clickConfirm(); handleExport('print')"><i class="bi bi-printer"></i> พิมพ์ / PDF</button><hr><button class="btn btn-info text-white" onclick="swal.clickConfirm(); handleExport('all')"><i class="bi bi-list-check"></i> พิมพ์รายการทั้งหมด (ตามเงื่อนไข)</button></div>`, showConfirmButton: false, showCloseButton: true }); }
       
       // ==============================================
-      // ฟังก์ชันพิมพ์รายการทั้งหมด (ต้องว่างเปล่าตามที่ขอ)
+      // ฟังก์ชันพิมพ์รายการทั้งหมด (กรองสต๊อก 0 ที่สถานะไม่ปกติออก + ล้างช่องให้ว่างเปล่า)
       // ==============================================
       function getAllItemsForReport() { 
           const type = document.getElementById('filterType').value; 
           const val = document.getElementById('selFilterValue').value; 
           if (!val) return []; 
           
-          // ดึงรายการทั้งหมดของแผนกนั้น โดยไม่สนว่าจะมีการกรองตัวเลข หรือสถานะอะไรไว้ก็ตาม
           const filteredMasters = allProducts.filter(p => { 
               const pDept = String(p.dept || "").trim().toUpperCase(); 
               const pSub = String(p.subCode || "").trim().toUpperCase(); 
               const vFilter = String(val || "").trim().toUpperCase(); 
-              return (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
+              const matchGroup = (type === 'dept') ? (pDept === vFilter) : (pSub === vFilter); 
+              
+              const rawStr = String(p.stock !== undefined && p.stock !== null ? p.stock : "0").replace(/,/g, '').trim(); 
+              const stockVal = parseFloat(rawStr) || 0; 
+              const isZero = (stockVal === 0); 
+              const statusText = String(p.status || "").replace(/[\s'"]/g, ''); 
+              const isNormal = statusText.includes('ปก') || statusText === '' || statusText === '-'; 
+
+              // เงื่อนไข: ให้ดึงมาเฉพาะรายการที่ (สต๊อกไม่ใช่ 0 หรือ สถานะเป็นปกติ)
+              return matchGroup && (!isZero || isNormal); 
           }); 
           
           return filteredMasters.map(p => { 
-              // ส่งกลับไปแบบ "ช่องนับว่างเปล่าทั้งหมด" เพื่อให้หน้าพิมพ์ไม่มีตัวเลขผลต่างหรือหน้าขาย
+              // ส่งกลับไปแบบ "ช่องนับว่างเปล่าทั้งหมด"
               return { 
                   ...p, 
                   status: p.status || 'ปกติ', 
@@ -1092,10 +1085,22 @@
           const printWindow = window.open('', '', 'height=800,width=1200'); 
           let tableRows = ""; 
           data.forEach(item => { 
+              // เพื่อให้หน้าพิมพ์ "รายการทั้งหมด" แสดงช่องว่างเปล่าได้
               const v = (n) => (n !== "" && n != null && n !== 0) ? n : ""; 
               const diffVal = item.diff !== "" ? item.diff : "";
               const diffStyle = (diffVal !== "" && diffVal < 0) ? "color:red;font-weight:bold;" : ((diffVal !== "" && diffVal > 0) ? "color:green;font-weight:bold;" : ""); 
-              tableRows += `<tr><td style="text-align:left;">${item.id}</td><td style="text-align:left;">${item.name}</td><td style="background-color:#e2e3e5;font-weight:bold;">${item.stock}</td><td>${item.status||'-'}</td><td>${v(item.f1)}</td><td>${v(item.f2)}</td><td>${v(item.f3)}</td><td style="background-color:#f8f9fa;">${v(item.s1)}</td><td style="background-color:#f8f9fa;">${v(item.s2)}</td><td style="background-color:#f8f9fa;">${v(item.s3)}</td><td style="${diffStyle}">${diffVal}</td><td>${item.dept||'-'}</td></tr>`; 
+              tableRows += `<tr>
+                <td style="text-align:left;">${item.id}</td>
+                <td style="text-align:left;">${item.name}</td>
+                <td style="background-color:#e2e3e5;font-weight:bold;">${item.stock}</td>
+                <td>${item.status||'-'}</td>
+                <td>${v(item.f1)}</td><td>${v(item.f2)}</td><td>${v(item.f3)}</td>
+                <td style="background-color:#f8f9fa;">${v(item.s1)}</td>
+                <td style="background-color:#f8f9fa;">${v(item.s2)}</td>
+                <td style="background-color:#f8f9fa;">${v(item.s3)}</td>
+                <td style="${diffStyle}">${diffVal}</td>
+                <td>${item.dept||'-'}</td>
+              </tr>`; 
           }); 
           const html = `<html><head><title>${title}</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{font-family:'Sarabun',sans-serif;padding:20px;font-size:12px}h3{text-align:center;margin-bottom:5px;font-weight:bold}.meta{text-align:center;color:#555;font-size:1em;margin-bottom:20px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #000;padding:6px 4px;text-align:center;vertical-align:middle}th{background-color:#e9ecef;font-weight:bold;white-space:nowrap}.col-id{width:12%}.col-name{width:25%}.col-qty{width:5%}.col-dept{width:8%}@media print{.no-print{display:none!important}body{padding:0}table{font-size:11px}}</style></head><body><div class="container-fluid"><div class="d-flex justify-content-between align-items-center mb-4 no-print bg-light p-3 rounded"><div><h5 class="mb-0">ตัวอย่างก่อนพิมพ์</h5><small class="text-muted">ตรวจสอบข้อมูลก่อนสั่งพิมพ์</small></div><div><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> สั่งพิมพ์</button><button class="btn btn-secondary" onclick="window.close()">ปิด</button></div></div><h3>${title}</h3><div class="meta">เงื่อนไข: ${filterInfo.type} = ${filterInfo.value} | จำนวน: ${data.length} รายการ | พิมพ์วันที่: ${new Date().toLocaleDateString('th-TH')}</div><table class="table-bordered"><thead><tr><th class="col-id">รหัสสินค้า</th><th class="col-name">ชื่อสินค้า</th><th class="col-qty">สต๊อกจริง</th><th class="col-qty">สถานะ</th><th class="col-qty">หน้า1</th><th class="col-qty">หน้า2</th><th class="col-qty">หน้า3</th><th class="col-qty">สต๊อก1</th><th class="col-qty">สต๊อก2</th><th class="col-qty">สต๊อก3</th><th class="col-qty">ผลต่าง</th><th class="col-dept">แผนก</th></tr></thead><tbody>${tableRows}</tbody></table></div></body></html>`; 
           printWindow.document.write(html); printWindow.document.close(); 
@@ -1107,7 +1112,7 @@
       function deleteCurrentHistory() { Swal.fire({ title: 'ลบรายการนี้?', text: 'ลบประวัติของสินค้านี้ทั้งหมด กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { if(result.isConfirmed) { showLoading("ลบ..."); fetch(GAS_API_URL + "?action=deleteHistory", { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: "follow", body: JSON.stringify({ productId: currentProduct.id }) }).then(r => r.json()).then(() => { rawCountedIds = rawCountedIds.filter(id => id !== currentProduct.id); if (!rawCountedIds.includes(currentProduct.id)) uniqueCountedIds.delete(currentProduct.id); delete countedDetailMap[currentProduct.id]; hideLoading(); editRowNumber = null; if(lastActiveTab === 'dashboard') { calculateDashboard(); switchTab('dashboard'); } else { loadHistory(); switchTab('history'); } }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); }); } }); }
       function deleteVerifyRecord() { Swal.fire({ title: 'ลบรายการรอตรวจสอบ?', text: 'กู้คืนไม่ได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', confirmButtonColor: '#dc3545' }).then((result) => { if(result.isConfirmed) { showLoading("ลบ..."); fetch(GAS_API_URL + "?action=deleteVerifyItem&id=" + encodeURIComponent(currentProduct.id), { redirect: "follow" }).then(r => r.json()).then(async () => { verifyListRaw = verifyListRaw.filter(v => v.id !== currentProduct.id); uniqueVerifyIds.delete(currentProduct.id); dashListVerify = dashListVerify.filter(v => v.id !== currentProduct.id); const empName = localStorage.getItem('stockAppUser'); offlineQueue = offlineQueue.filter(q => !(q.productId === currentProduct.id && q.isVerify && q.employeeName === empName)); try{ await localforage.setItem('offlineQueue', offlineQueue); }catch(e){} hideLoading(); cancelForm(); calculateDashboard(); Swal.fire({toast:true, position:'top-end', icon:'success', title:'ลบแล้ว', showConfirmButton:false, timer:1500}); }).catch(e => { hideLoading(); Swal.fire('Error', e.message, 'error'); }); } }); }
       
-      async function triggerAdminSync() { Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => { if (result.isConfirmed) { showLoading("กำลังซิงค์ลงชีต..."); try { const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow", cache: "no-store" }); const resData = await response.json(); hideLoading(); Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false}); } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); } } }); }
+      async function triggerAdminSync() { Swal.fire({ title: 'ดึงข้อมูลลงชีต?', text: 'กวาดข้อมูลจาก Firebase ไปลง Google Sheets', icon: 'info', showCancelButton: true, confirmButtonText: 'ดึงข้อมูล' }).then(async (result) => { if (result.isConfirmed) { showLoading("กำลังซิงค์ลงชีต..."); try { const response = await fetch(GAS_API_URL + "?action=syncAdmin", { redirect: "follow", cache: "no-store" }); const resData = await response.json(); hideLoading(); Swal.fire({title: 'สำเร็จ', text: resData.message || 'เรียบร้อย', icon: 'success', timer: 1500, showConfirmButton: false}).then(() => { forceSyncData(); }); } catch (err) { hideLoading(); Swal.fire('Error', 'ไม่สามารถเชื่อมต่อได้', 'error'); } } }); }
       function startLinkBarcode() { const code = document.getElementById('notFoundCode').innerText; if(!code) return; isScanProcessing = false; isLinkMode = true; pendingBarcode = code; document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('linkModeBar').classList.remove('hidden'); document.getElementById('pendingCodeDisplay').innerText = code; const s = document.getElementById('searchInput'); s.value = ''; s.placeholder = 'สแกนรหัสเดิม...'; s.blur(); setTimeout(()=>s.blur(), 100); document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); if(!isScannerRunning) toggleScanner(); }
       function cancelLinkMode() { isLinkMode = false; pendingBarcode = ""; isScanProcessing = false; document.getElementById('linkModeBar').classList.add('hidden'); resetSearch(); }
       async function confirmLinkBarcode(product) { Swal.fire({ title: 'ผูกรหัสนี้?', html: `รหัส: <b>${pendingBarcode}</b><br>กับ: <b>${product.name}</b>`, icon: 'question', showCancelButton: true, confirmButtonText: 'ยืนยัน' }).then(async (result) => { if (result.isConfirmed) { showLoading("บันทึก..."); try { const newBcData = { targetMainId: product.id, newBarcode: pendingBarcode, timestamp: new Date().getTime() }; await database.ref('new_barcodes').push(newBcData); let pIdx = allProducts.findIndex(p => p.id === product.id); if(pIdx > -1) { allProducts[pIdx].allIds += " " + pendingBarcode.toLowerCase(); await localforage.setItem('localStockData', allProducts); } hideLoading(); isScanProcessing = false; isLinkMode = false; safeStopScanner(); const savedCode = pendingBarcode; pendingBarcode=""; document.getElementById('linkModeBar').classList.add('hidden'); document.getElementById('searchInput').value = ''; openForm(product, false, savedCode); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ผูกรหัสแล้ว (รอซิงค์ลงชีต)', showConfirmButton: false, timer: 1500 }); } catch (err) { hideLoading(); Swal.fire('Error', err.message, 'error'); } } }); }
