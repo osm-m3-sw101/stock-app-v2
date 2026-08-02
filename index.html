@@ -76,7 +76,6 @@
         <div class="d-flex justify-content-between align-items-center mb-2 pt-2">
             <div><i class="bi bi-person-circle text-primary"></i> <span id="displayName" class="fw-bold text-dark"></span></div>
             <div class="d-flex align-items-center">
-                <!-- ปุ่ม Admin -->
                 <button id="btnStampUpdate" class="btn btn-sm btn-success hidden me-2 fw-bold" onclick="stampStockUpdate()" title="ประทับตรายืนยันสต๊อก"><i class="bi bi-patch-check"></i> ประทับตรา</button>
                 <button id="btnAdminDups" class="btn btn-sm btn-danger flashing hidden me-2" onclick="showDuplicatesModal()" title="จัดการรายการซ้ำ"><i class="bi bi-exclamation-triangle"></i> ซ้ำ (<span id="dupCount">0</span>)</button>
                 <button id="btnChangePin" class="btn btn-sm btn-outline-secondary me-1 hidden" onclick="showChangePinModal()" title="เปลี่ยนรหัสผ่าน"><i class="bi bi-key"></i></button>
@@ -88,14 +87,14 @@
             </div>
         </div>
 
-        <!-- หน้าดูรายการซ้ำ (Admin Only) -->
+        <!-- หน้าดูรายการซ้ำ -->
         <div id="viewDuplicates" class="hidden card p-3 border-danger shadow">
            <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-exclamation-triangle"></i> จัดการรายการสต๊อกซ้ำ</h6>
             <button onclick="switchTab('scan')" class="btn btn-outline-secondary btn-sm">กลับหนัาหลัก</button>
           </div>
           <div class="alert alert-warning small">
-             รายการด้านล่างคือรหัสสินค้าที่มีชื่อหรือรหัสซ้ำกันในชีต "สต๊อกจริง" (แสดงเฉพาะตัวที่ซ้ำ ไม่รวมตัวหลัก) กรุณาตรวจสอบและลบบรรทัดที่ซ้ำซ้อนออก
+             รายการด้านล่างคือรหัสสินค้าที่มีชื่อหรือรหัสซ้ำกันในชีต "สต๊อกจริง" กรุณาตรวจสอบและลบบรรทัดที่ซ้ำซ้อนออก
           </div>
           <div id="duplicateList" class="list-group" style="max-height: 400px; overflow-y: auto;"></div>
         </div>
@@ -168,11 +167,11 @@
 
             <div class="row g-1 mb-2">
               <div class="col-4"><div class="stock-label">หน้าร้าน 1</div><input type="number" step="any" id="f1" class="form-control input-qty text-center" placeholder="-"></div>
-<div class="col-4"><div class="stock-label">หน้าร้าน 2</div><input type="number" step="any" id="f2" class="form-control input-qty text-center" placeholder="-"></div>
-<div class="col-4"><div class="stock-label">หน้าร้าน 3</div><input type="number" step="any" id="f3" class="form-control input-qty text-center" placeholder="-"></div>
-<div class="col-4"><div class="stock-label">สต๊อก 1</div><input type="number" step="any" id="s1" class="form-control input-qty text-center bg-light" placeholder="-"></div>
-<div class="col-4"><div class="stock-label">สต๊อก 2</div><input type="number" step="any" id="s2" class="form-control input-qty text-center bg-light" placeholder="-"></div>
-<div class="col-4"><div class="stock-label">สต๊อก 3</div><input type="number" step="any" id="s3" class="form-control input-qty text-center bg-light" placeholder="-"></div>
+              <div class="col-4"><div class="stock-label">หน้าร้าน 2</div><input type="number" step="any" id="f2" class="form-control input-qty text-center" placeholder="-"></div>
+              <div class="col-4"><div class="stock-label">หน้าร้าน 3</div><input type="number" step="any" id="f3" class="form-control input-qty text-center" placeholder="-"></div>
+              <div class="col-4"><div class="stock-label">สต๊อก 1</div><input type="number" step="any" id="s1" class="form-control input-qty text-center bg-light" placeholder="-"></div>
+              <div class="col-4"><div class="stock-label">สต๊อก 2</div><input type="number" step="any" id="s2" class="form-control input-qty text-center bg-light" placeholder="-"></div>
+              <div class="col-4"><div class="stock-label">สต๊อก 3</div><input type="number" step="any" id="s3" class="form-control input-qty text-center bg-light" placeholder="-"></div>
             </div>
             <div class="alert alert-info py-2 text-center mb-2">
               <span class="small">รวมหน้าจอ:</span> <strong id="totalCount" style="font-size:1.25em">0</strong> <span class="ms-2 small text-muted">(ผลต่างเฉพาะรอบนี้: <span id="diffVal">0</span>)</span>
@@ -185,7 +184,6 @@
         <div id="viewDashboard" class="hidden">
             <h5 class="mb-3 fw-bold"><i class="bi bi-pie-chart"></i> สรุปสถานะ</h5>
             <div class="card p-3 mb-3 bg-light border-0">
-                <!-- เพิ่มฟิลเตอร์กรองสถานะ และ จำนวนสต๊อก -->
                 <div class="row g-2 mb-2">
                     <div class="col-4"><select id="filterType" class="form-select form-select-sm" onchange="populateFilterValues()"><option value="dept">แผนก</option><option value="subCode">รหัสซับ</option></select></div>
                     <div class="col-8"><input type="search" id="txtFilterSearch" class="form-control form-select-sm" placeholder="🔍 ค้นหา..." onkeyup="debouncedFilterOptions()" onkeydown="handleFilterKey(event)" autocomplete="off"></div>
@@ -195,9 +193,10 @@
                         <input type="number" id="filterStockQty" class="form-control form-control-sm text-center text-primary fw-bold" placeholder="ระบุสต๊อก (เช่น 0)" oninput="calculateDashboard()">
                     </div>
                     <div class="col-6">
+                        <!-- เลือกทั้งหมดเป็นค่าเริ่มต้น (selected) -->
                         <select id="filterStatus" class="form-select form-select-sm text-center text-primary fw-bold" onchange="calculateDashboard()">
-                            <option value="all">สถานะ: ทั้งหมด</option>
-                            <option value="normal" selected>สถานะ: ปกติเท่านั้น</option>
+                            <option value="all" selected>สถานะ: ทั้งหมด</option>
+                            <option value="normal">สถานะ: ปกติเท่านั้น</option>
                         </select>
                     </div>
                 </div>
@@ -242,6 +241,7 @@
       </div>
     </div>
 
+    <!-- โค้ด JavaScript ที่เขียนใหม่ สะอาด ไม่มีลูปซ้ำ -->
     <script>
       function debounce(func, delay) {
         let timeoutId;
@@ -280,6 +280,7 @@
       let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
       let offlineQueue = [];
       let isSyncing = false; 
+      let initialLoadTime = Date.now();
       
       let pendingLoginName = "";
       let pendingLoginPin = "";
@@ -864,7 +865,19 @@
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
       function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
 
-      function populateFilterValues() { const type = document.getElementById('filterType').value; const select = document.getElementById('selFilterValue'); document.getElementById('txtFilterSearch').value = ''; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; const values = new Set(); allProducts.forEach(p => { const val = (type === 'dept') ? p.dept : p.subCode; if(val) values.add(val); }); allFilterOptionsData = Array.from(values).sort(); renderFilterOptions(allFilterOptionsData); }
+      function populateFilterValues() { 
+          const type = document.getElementById('filterType').value; 
+          const select = document.getElementById('selFilterValue'); 
+          document.getElementById('txtFilterSearch').value = ''; 
+          select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; 
+          const values = new Set(); 
+          allProducts.forEach(p => { 
+              const val = (type === 'dept') ? p.dept : p.subCode; 
+              if(val) values.add(val); 
+          }); 
+          allFilterOptionsData = Array.from(values).sort(); 
+          renderFilterOptions(allFilterOptionsData); 
+      }
       function filterDropdownOptions() { const txt = document.getElementById('txtFilterSearch').value.toLowerCase(); const filtered = allFilterOptionsData.filter(v => v.toLowerCase().includes(txt)); renderFilterOptions(filtered); }
       function handleFilterKey(e) { if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); const txt = document.getElementById('txtFilterSearch').value.toLowerCase().trim(); let match = allFilterOptionsData.find(v => v.toLowerCase() === txt); if (!match) match = allFilterOptionsData.find(v => v.toLowerCase().includes(txt)); if (match) { document.getElementById('selFilterValue').value = match; calculateDashboard(); document.activeElement.blur(); } } }
       function renderFilterOptions(list) { const select = document.getElementById('selFilterValue'); const currentVal = select.value; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; list.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; select.appendChild(opt); }); if(list.includes(currentVal)) select.value = currentVal; }
