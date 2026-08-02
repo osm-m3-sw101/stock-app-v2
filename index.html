@@ -76,6 +76,7 @@
         <div class="d-flex justify-content-between align-items-center mb-2 pt-2">
             <div><i class="bi bi-person-circle text-primary"></i> <span id="displayName" class="fw-bold text-dark"></span></div>
             <div class="d-flex align-items-center">
+                <!-- ปุ่ม Admin -->
                 <button id="btnStampUpdate" class="btn btn-sm btn-success hidden me-2 fw-bold" onclick="stampStockUpdate()" title="ประทับตรายืนยันสต๊อก"><i class="bi bi-patch-check"></i> ประทับตรา</button>
                 <button id="btnAdminDups" class="btn btn-sm btn-danger flashing hidden me-2" onclick="showDuplicatesModal()" title="จัดการรายการซ้ำ"><i class="bi bi-exclamation-triangle"></i> ซ้ำ (<span id="dupCount">0</span>)</button>
                 <button id="btnChangePin" class="btn btn-sm btn-outline-secondary me-1 hidden" onclick="showChangePinModal()" title="เปลี่ยนรหัสผ่าน"><i class="bi bi-key"></i></button>
@@ -193,7 +194,6 @@
                         <input type="number" id="filterStockQty" class="form-control form-control-sm text-center text-primary fw-bold" placeholder="ระบุสต๊อก (เช่น 0)" oninput="calculateDashboard()">
                     </div>
                     <div class="col-6">
-                        <!-- เลือกทั้งหมดเป็นค่าเริ่มต้น (selected) -->
                         <select id="filterStatus" class="form-select form-select-sm text-center text-primary fw-bold" onchange="calculateDashboard()">
                             <option value="all" selected>สถานะ: ทั้งหมด</option>
                             <option value="normal">สถานะ: ปกติเท่านั้น</option>
@@ -241,7 +241,6 @@
       </div>
     </div>
 
-    <!-- โค้ด JavaScript ที่เขียนใหม่ สะอาด ไม่มีลูปซ้ำ -->
     <script>
       function debounce(func, delay) {
         let timeoutId;
@@ -252,7 +251,7 @@
       }
       const debouncedFilterOptions = debounce(filterDropdownOptions, 300);
 
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwNoROCZh6p6Svh4YH7IEJqr8Mnpwl8AH8PuKPVBy_wqBhFs8rIL0XZ9r0B1C8JRdnC/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxc4fAkIOm6cZkM-ZpvTiPWz6wsT0HXiMMCUMd77kmbdFJzPLMX071qn2B0as7sASMx/exec";
       
       const firebaseConfig = {
         apiKey: "AIzaSyCGEtHoiX3iB7YAmEeBElWNTw3Am9HhoTg",
@@ -280,7 +279,6 @@
       let dashListLeft = [], dashListDone = [], dashListVerify = [], dashListDiffNotZero = [], allFilterOptionsData = [];
       let offlineQueue = [];
       let isSyncing = false; 
-      let initialLoadTime = Date.now();
       
       let pendingLoginName = "";
       let pendingLoginPin = "";
@@ -465,6 +463,9 @@
       function showLoading(t) { document.getElementById('loadingText').innerText = t||"กำลังทำงาน..."; document.getElementById('loadingOverlay').classList.remove('hidden'); }
       function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
 
+      // ==========================================
+      // ฟังก์ชัน SyncData แก้บั๊กลูปค้างดาวน์โหลด
+      // ==========================================
       async function syncData(isFirstLogin) {
         if(isFirstLogin) showLoading("กำลังตรวจสอบการอัปเดต...");
         const cachedProducts = await localforage.getItem('localStockData'); 
@@ -478,12 +479,16 @@
             if (dynData.error) throw new Error(dynData.error);
 
             const serverStamp = dynData.stockStamp || "";
-            const localStamp = localStorage.getItem('localStockStamp');
+            const localStamp = localStorage.getItem('localStockStamp') || "";
 
             if (dynData.adminPin) { localStorage.setItem('serverAdminPin', dynData.adminPin); }
 
-            if (!cachedProducts || serverStamp !== localStamp || localStamp === "") {
-                showLoading("พบสต๊อกหลักชุดใหม่ กำลังดาวน์โหลด...");
+            // แก้บั๊ก: โหลดใหม่เฉพาะเมื่อ 1. ไม่มีแคชเลย หรือ 2. เซิร์ฟเวอร์มีตราประทับแล้วและไม่ตรงกับเครื่อง
+            const isCacheEmpty = !cachedProducts || (Array.isArray(cachedProducts) && cachedProducts.length === 0);
+            const isStampChanged = (serverStamp !== "" && serverStamp !== localStamp);
+
+            if (isCacheEmpty || isStampChanged) {
+                showLoading("พบการอัปเดตสต๊อกหลัก กำลังดาวน์โหลด...");
                 const resAll = await fetch(GAS_API_URL + "?action=getAllData&t=" + t, { redirect: "follow", cache: "no-store" });
                 const allData = await resAll.json();
                 if (allData.error) throw new Error(allData.error);
@@ -865,23 +870,61 @@
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
       function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
 
+      // =====================================
+      // ฟังก์ชันจัดกลุ่มแผนกแบบคลีน ไม่มีซ้ำซ้อน
+      // =====================================
       function populateFilterValues() { 
           const type = document.getElementById('filterType').value; 
           const select = document.getElementById('selFilterValue'); 
           document.getElementById('txtFilterSearch').value = ''; 
           select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; 
+          
           const values = new Set(); 
           allProducts.forEach(p => { 
               const val = (type === 'dept') ? p.dept : p.subCode; 
-              if(val) values.add(val); 
+              if(val) values.add(String(val).trim()); 
           }); 
+          
           allFilterOptionsData = Array.from(values).sort(); 
           renderFilterOptions(allFilterOptionsData); 
       }
-      function filterDropdownOptions() { const txt = document.getElementById('txtFilterSearch').value.toLowerCase(); const filtered = allFilterOptionsData.filter(v => v.toLowerCase().includes(txt)); renderFilterOptions(filtered); }
-      function handleFilterKey(e) { if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); const txt = document.getElementById('txtFilterSearch').value.toLowerCase().trim(); let match = allFilterOptionsData.find(v => v.toLowerCase() === txt); if (!match) match = allFilterOptionsData.find(v => v.toLowerCase().includes(txt)); if (match) { document.getElementById('selFilterValue').value = match; calculateDashboard(); document.activeElement.blur(); } } }
-      function renderFilterOptions(list) { const select = document.getElementById('selFilterValue'); const currentVal = select.value; select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; list.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; select.appendChild(opt); }); if(list.includes(currentVal)) select.value = currentVal; }
+
+      function filterDropdownOptions() { 
+          const txt = document.getElementById('txtFilterSearch').value.toLowerCase(); 
+          const filtered = allFilterOptionsData.filter(v => v.toLowerCase().includes(txt)); 
+          renderFilterOptions(filtered); 
+      }
+
+      function handleFilterKey(e) { 
+          if (e.key === 'Enter' || e.keyCode === 13) { 
+              e.preventDefault(); 
+              const txt = document.getElementById('txtFilterSearch').value.toLowerCase().trim(); 
+              let match = allFilterOptionsData.find(v => v.toLowerCase() === txt); 
+              if (!match) match = allFilterOptionsData.find(v => v.toLowerCase().includes(txt)); 
+              if (match) { 
+                  document.getElementById('selFilterValue').value = match; 
+                  calculateDashboard(); 
+                  document.activeElement.blur(); 
+              } 
+          } 
+      }
+
+      function renderFilterOptions(list) { 
+          const select = document.getElementById('selFilterValue'); 
+          const currentVal = select.value; 
+          select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; 
+          list.forEach(v => { 
+              const opt = document.createElement('option'); 
+              opt.value = v; 
+              opt.innerText = v; 
+              select.appendChild(opt); 
+          }); 
+          if(list.includes(currentVal)) select.value = currentVal; 
+      }
       
+      // =====================================
+      // ฟังก์ชัน Dashboard + กรองสต๊อกและสถานะ
+      // =====================================
       function calculateDashboard() { 
           const type = document.getElementById('filterType').value; 
           const val = document.getElementById('selFilterValue').value; 
