@@ -7,6 +7,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#f4f6f9">
+    
+    <!-- เพิ่มไอคอนสำหรับระบบ iOS -->
+    <link rel="apple-touch-icon" href="https://i.postimg.cc/JhQ13ykH/Gemini-Generated-Image-b9vhizb9vhizb9vh-Photoroom.png">
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -53,6 +56,42 @@
       @keyframes flashWarning { 0% { opacity: 1; background-color: #dc3545; } 50% { opacity: 0.7; background-color: #ffc107; color: black; } 100% { opacity: 1; background-color: #dc3545; } }
       .flashing { animation: flashWarning 1.5s infinite; border: 1px solid white; }
     </style>
+
+    <!-- ระบบตั้งค่า PWA -->
+    <script>
+      const pwaManifest = {
+        "name": "ระบบเช็คสต๊อก",
+        "short_name": "StockApp",
+        "start_url": "https://script.google.com/macros/s/AKfycbxsFPXNW1UqLRSGQLkDoWIsjgXcYYBZ69Z6u124wO6XRj3jIk4764kiueJKPjrennmc/exec", 
+        "display": "standalone",
+        "background_color": "#f4f6f9",
+        "theme_color": "#0d6efd",
+        "icons": [
+          {
+            "src": "https://i.postimg.cc/JhQ13ykH/Gemini-Generated-Image-b9vhizb9vhizb9vh-Photoroom.png", // เปลี่ยนลิงก์รูปไอคอนได้ที่นี่
+            "sizes": "512x512",
+            "type": "image/png"
+          }
+        ]
+      };
+
+      const stringManifest = JSON.stringify(pwaManifest);
+      const blobManifest = new Blob([stringManifest], { type: 'application/json' });
+      const manifestURL = URL.createObjectURL(blobManifest);
+      const manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      manifestLink.href = manifestURL;
+      document.head.appendChild(manifestLink);
+      
+      if ('serviceWorker' in navigator) {
+        const swCode = "self.addEventListener('fetch', function(event) {});";
+        const swBlob = new Blob([swCode], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(swBlob);
+        navigator.serviceWorker.register(swUrl).then(() => {
+            console.log('Service Worker Registered for PWA installability');
+        }).catch(err => console.log('SW Registration failed: ', err));
+      }
+    </script>
   </head>
   <body>
     <div id="updateBanner" class="hidden alert alert-success position-fixed shadow-lg" style="top: 15px; left: 50%; transform: translateX(-50%); z-index: 10500; cursor: pointer; border-radius: 30px; font-weight: bold; width: 90%; max-width: 400px; text-align: center;" onclick="forceSyncData(); this.classList.add('hidden');">
