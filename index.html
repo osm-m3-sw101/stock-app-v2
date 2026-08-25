@@ -987,7 +987,11 @@
       function changeCamera() {
           const camId = document.getElementById('cameraSelect').value;
           if (isScannerRunning) {
-              safeStopScanner(true).then(() => { setTimeout(() => startCameraById(camId), 500); });
+              document.getElementById('camStatus').innerText = "กำลังสลับกล้อง โปรดรอสักครู่...";
+              safeStopScanner(true).then(() => { 
+                  // เพิ่มเวลาหน่วงให้เบราว์เซอร์คืนฮาร์ดแวร์กล้องให้สนิทก่อน (แก้ปัญหา POCO/Vivo จอดำ)
+                  setTimeout(() => startCameraById(camId), 1000); 
+              });
           } else {
               startCameraById(camId);
           }
