@@ -154,6 +154,7 @@
           </div>
 
           <div id="cameraArea" class="hidden text-center mb-2" style="position: relative;">
+            <select id="cameraSelect" class="form-select form-select-sm mb-2 hidden" style="border-radius: 20px; font-weight: bold; text-align: center; border: 2px solid #0d6efd; color: #0d6efd;" onchange="changeCamera()"></select>
             <div id="reader"></div>
             <button id="switchCamBtn" onclick="nextCamera()"><i class="bi bi-arrow-repeat"></i> สลับกล้อง</button>
             <div class="text-muted small mb-1" id="camStatus">กำลังเริ่ม...</div>
@@ -575,16 +576,39 @@
       }
 
       async function forceSyncData() {
-          showLoading("บังคับอัปเดตฐานข้อมูลใหม่ทั้งหมด...");
+          showLoading("ตรวจสอบข้อมูลล่าสุด...");
           try {
-              await localforage.removeItem('localStockData'); 
-              await localforage.removeItem('duplicateItems'); 
-          } catch(e){}
-          localStorage.removeItem('localStockStamp'); 
-          localStorage.setItem('lastActiveTime', Date.now()); 
-          initialLoadTime = Date.now(); 
-          await syncData(false); 
-          Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ดึงข้อมูลล่าสุดเรียบร้อย', showConfirmButton: false, timer: 1500 });
+              const t = new Date().getTime();
+              // 1. ดึงข้อมูลแบบไดนามิก (ไฟล์เบา: ประวัติ/รายการรอตรวจ/ตราประทับ)
+              const response = await fetch(GAS_API_URL + "?action=getDynamicData&t=" + t, { redirect: "follow", cache: "no-store" });
+              const dynData = await response.json();
+              
+              const serverStamp = dynData.stockStamp || "";
+              const localStamp = localStorage.getItem('localStockStamp') || "";
+              
+              // 2. เช็คตราประทับ
+              if (serverStamp !== "" && serverStamp !== localStamp) {
+                  // ถ้าประทับตราเปลี่ยน = มีการเพิ่มลบสินค้ารายการใหญ่ บังคับโหลดใหม่ทั้งหมด
+                  showLoading("พบสต๊อกตั้งต้นเวอร์ชันใหม่! กำลังโหลดฐานข้อมูลทั้งหมด...");
+                  try {
+                      await localforage.removeItem('localStockData'); 
+                      await localforage.removeItem('duplicateItems'); 
+                  } catch(e){}
+                  localStorage.removeItem('localStockStamp'); 
+                  await syncData(false); // สั่งดึงข้อมูลใหญ่ใหม่
+                  Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'อัปเดตสต๊อกหลักเรียบร้อย', showConfirmButton: false, timer: 1500 });
+              } else {
+                  // ถ้าประทับตราเหมือนเดิม = นำแค่ประวัติและยอดเรียลไทม์ล่าสุดมาอัปเดตบนหน้าจอ (ไม่ต้องโหลดสินค้าใหม่)
+                  processServerData(dynData, false);
+                  Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'ดึงข้อมูลนับล่าสุดแล้ว', showConfirmButton: false, timer: 1000 });
+              }
+              
+              localStorage.setItem('lastActiveTime', Date.now()); 
+              initialLoadTime = Date.now(); 
+          } catch(e) {
+              hideLoading();
+              Swal.fire('Error', 'ตรวจสอบล้มเหลว ล่าช้าหรือไม่มีอินเทอร์เน็ต', 'error');
+          }
       }
 
       function processServerData(data, isFirstLogin) {
@@ -910,9 +934,90 @@
       }
 
       function resetSearch() { document.getElementById('searchInput').value = ''; document.getElementById('searchInput').placeholder = isLinkMode ? 'สแกนรหัสเดิม...' : 'รหัส / ชื่อ / แผนก...'; document.getElementById('lastScanResult').classList.add('hidden'); document.getElementById('notFoundArea').classList.add('hidden'); document.getElementById('searchListArea').classList.add('hidden'); isScanProcessing = false; if (!document.getElementById('viewHome').classList.contains('hidden')) { setTimeout(() => { if(!isScannerRunning) toggleScanner(); }, 800); } }
-      function toggleScanner() { if(isCameraBusy) return; if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); } if(isScannerRunning) { safeStopScanner(); } else { isManualClose = false; currentFacingMode = "environment"; document.getElementById('btnScan').classList.add('hidden'); document.getElementById('cameraArea').classList.remove('hidden'); isCameraBusy = true; setTimeout(() => { startCameraByFacingMode(currentFacingMode); }, 300); } }
+
+      let camerasList = [];
+
+      function toggleScanner() { 
+          if(isCameraBusy) return; 
+          if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(""); window.speechSynthesis.speak(u); } 
+          
+          if(isScannerRunning) { 
+              safeStopScanner(); 
+          } else { 
+              isManualClose = false; 
+              document.getElementById('btnScan').classList.add('hidden'); 
+              document.getElementById('cameraArea').classList.remove('hidden'); 
+              isCameraBusy = true; 
+              
+              // 🔍 ค้นหากล้องทั้งหมดในเครื่อง
+              Html5Qrcode.getCameras().then(devices => {
+                  if (devices && devices.length > 0) {
+                      camerasList = devices;
+                      const camSelect = document.getElementById('cameraSelect');
+                      camSelect.innerHTML = '';
+                      
+                      let backCamId = devices[0].id; // ตั้งค่าเริ่มต้น
+                      devices.forEach(cam => {
+                          const opt = document.createElement('option');
+                          opt.value = cam.id;
+                          opt.innerText = cam.label || `กล้อง ${cam.id.substring(0, 5)}...`;
+                          camSelect.appendChild(opt);
+                          
+                          // พยายามดึงกล้องหลังขึ้นมาเป็นตัวแรก
+                          if (cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('environment') || cam.label.toLowerCase().includes('หลัง')) {
+                              backCamId = cam.id;
+                          }
+                      });
+                      
+                      camSelect.value = backCamId;
+                      camSelect.classList.remove('hidden');
+                      document.getElementById('switchCamBtn').classList.add('hidden'); // ซ่อนปุ่มสลับกล้องแบบเก่า
+                      
+                      startCameraById(backCamId);
+                  } else {
+                      // แผนสำรอง หากล้องไม่เจอ ให้ใช้วิธีเดิม
+                      startCameraByFacingMode("environment");
+                  }
+              }).catch(err => {
+                  startCameraByFacingMode("environment");
+              });
+          } 
+      }
+
+      function changeCamera() {
+          const camId = document.getElementById('cameraSelect').value;
+          if (isScannerRunning) {
+              safeStopScanner(true).then(() => { setTimeout(() => startCameraById(camId), 500); });
+          } else {
+              startCameraById(camId);
+          }
+      }
+
+      function startCameraById(camId) { 
+          if(isManualClose) { isCameraBusy = false; return; } 
+          document.getElementById('camStatus').innerText = "กำลังเปิดกล้อง..."; 
+          const s = getScanner(); 
+          try { if (s.getState() === 2) { s.stop(); s.clear(); } } catch (e) { } 
+          
+          s.start( 
+              { deviceId: { exact: camId } }, 
+              { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, 
+              onScanSuccess, 
+              () => {} 
+          ).then(() => { 
+              isScannerRunning = true; 
+              isCameraBusy = false; 
+              document.getElementById('camStatus').innerText = "";
+          }).catch(e => { 
+              document.getElementById('camStatus').innerText = "⚠️ ไม่สามารถเปิดกล้องได้ ลองเลือกเลนส์อื่น"; 
+              isScannerRunning = false; 
+              isCameraBusy = false; 
+          }); 
+      }
+
       function nextCamera() { if(isCameraBusy) return; safeStopScanner(true).then(() => { setTimeout(() => { isManualClose = false; currentFacingMode = currentFacingMode === "environment" ? "user" : "environment"; isCameraBusy = true; startCameraByFacingMode(currentFacingMode); }, 500); }); }
       function startCameraByFacingMode(mode) { if(isManualClose) { isCameraBusy = false; return; } document.getElementById('camStatus').innerText = mode === "environment" ? "กล้องหลัง" : "กล้องหน้า"; const s = getScanner(); try { if (s.getState() === 2) { s.stop(); s.clear(); } } catch (e) { } s.start( { facingMode: mode }, { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.0 }, onScanSuccess, () => {} ).then(() => { isScannerRunning = true; isCameraBusy = false; }).catch(e => { if (mode === "environment" && !isManualClose) { setTimeout(() => { currentFacingMode = "user"; startCameraByFacingMode("user"); }, 500); } else { document.getElementById('camStatus').innerText = "ไม่สามารถเปิดกล้องได้"; isScannerRunning = false; isCameraBusy = false; } }); }
+
       async function safeStopScanner(keepUI = false) { isManualClose = true; if (!isScannerRunning && !isCameraBusy) { if (!keepUI) finalizeStop(); return; } isCameraBusy = true; try { const s = getScanner(); if (s && s.getState() === 2) { await s.stop(); } try { s.clear(); } catch(e) {} } catch(e) { const video = document.querySelector('#reader video'); if(video) { video.pause(); video.srcObject = null; } } finally { isScannerRunning = false; isCameraBusy = false; if (!keepUI) finalizeStop(); } }
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
       function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("ทำงาน"); m.lang='th-TH'; m.rate=1.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
