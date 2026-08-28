@@ -981,9 +981,10 @@
 
       async function safeStopScanner(keepUI = false) { isManualClose = true; if (!isScannerRunning && !isCameraBusy) { if (!keepUI) finalizeStop(); return; } isCameraBusy = true; try { const s = getScanner(); if (s && s.getState() === 2) { await s.stop(); } try { s.clear(); } catch(e) {} } catch(e) { const video = document.querySelector('#reader video'); if(video) { video.pause(); video.srcObject = null; } } finally { isScannerRunning = false; isCameraBusy = false; if (!keepUI) finalizeStop(); } }
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = "";   
-function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { const sound = new Audio("https://upload.wikimedia.org/wikipedia/commons/2/25/Tokay_gecko_call.ogg"); sound.play(); if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
-      function populateFilterValues() { 
-          const type = document.getElementById('filterType').value; 
+      // โหลดไฟล์เสียงรอไว้ล่วงหน้า (ลิงก์เสียงวัว MP3)
+      window.scanSound = new Audio("https://soundbible.com/mp3/Cow_Moo-Mike_Koenig-42670858.mp3");
+
+      function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { window.scanSound.currentTime = 0; window.scanSound.play().catch(e=>{}); if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
           const select = document.getElementById('selFilterValue'); 
           document.getElementById('txtFilterSearch').value = ''; 
           select.innerHTML = '<option value="">-- เลือกรายการ --</option>'; 
