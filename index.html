@@ -981,9 +981,46 @@
 
       async function safeStopScanner(keepUI = false) { isManualClose = true; if (!isScannerRunning && !isCameraBusy) { if (!keepUI) finalizeStop(); return; } isCameraBusy = true; try { const s = getScanner(); if (s && s.getState() === 2) { await s.stop(); } try { s.clear(); } catch(e) {} } catch(e) { const video = document.querySelector('#reader video'); if(video) { video.pause(); video.srcObject = null; } } finally { isScannerRunning = false; isCameraBusy = false; if (!keepUI) finalizeStop(); } }
       function finalizeStop() { isScannerRunning = false; document.getElementById('cameraArea').classList.add('hidden'); document.getElementById('btnScan').classList.remove('hidden'); document.getElementById('camStatus').innerText = ""; }
-      
-function onScanSuccess(t) { if(isScanProcessing) return; isScanProcessing = true; try { if('speechSynthesis' in window){ const m=new SpeechSynthesisUtterance("หัวดอ"); m.lang='th-TH'; m.rate=1.2; m.pitch=2.0; window.speechSynthesis.speak(m); } if(navigator.vibrate) navigator.vibrate(100); } catch(e){} if(t.includes(',')) t=t.split(',')[0].trim(); t=t.trim(); if(t.startsWith("]C1")) t=t.substring(3); if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); document.getElementById('scanValueDisplay').innerText = t; document.getElementById('lastScanResult').classList.remove('hidden'); document.getElementById('searchInput').value = t; safeStopScanner().then(() => { searchProduct(t); }); }
+      // ฟังก์ชันสร้างเสียงสังเคราะห์ "ติ๊ด!" (เสียงเครื่องสแกนบาร์โค้ด)
+      function playOfflineSound() {
+          try {
+              const AudioContext = window.AudioContext || window.webkitAudioContext;
+              if (!AudioContext) return;
+              const ctx = new AudioContext();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              
+              osc.type = 'sine'; // รูปแบบคลื่นเสียงเรียบๆ
+              osc.frequency.setValueAtTime(2500, ctx.currentTime); // ความถี่แหลมใสระดับ 2500Hz
+              
+              gain.gain.setValueAtTime(0.5, ctx.currentTime); // ระดับความดัง
+              gain.gain.setValueAtTime(0, ctx.currentTime + 0.1); // ตัดจบเสียงอย่างรวดเร็วใน 0.1 วินาที (สั้น ห้วน)
+              
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.1);
+          } catch(e) {}
+      }
 
+      function onScanSuccess(t) { 
+          if(isScanProcessing) return; 
+          isScanProcessing = true; 
+          
+          playOfflineSound(); // เรียกใช้เสียงติ๊ด!
+          if(navigator.vibrate) navigator.vibrate(100); 
+          
+          if(t.includes(',')) t=t.split(',')[0].trim(); 
+          t=t.trim(); 
+          if(t.startsWith("]C1")) t=t.substring(3); 
+          if(t.startsWith("[") && !t.startsWith("[[")) t=t.replace(/^\[/, ''); 
+          
+          document.getElementById('scanValueDisplay').innerText = t; 
+          document.getElementById('lastScanResult').classList.remove('hidden'); 
+          document.getElementById('searchInput').value = t; 
+          
+          safeStopScanner().then(() => { searchProduct(t); }); 
+      }
       function populateFilterValues() { 
           const type = document.getElementById('filterType').value; 
           const select = document.getElementById('selFilterValue'); 
